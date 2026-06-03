@@ -20,6 +20,12 @@ from ai_agent import (
     build_chat_system_prompt,
     generate_pdf_report,
 )
+from streamlit_maestro_theme import (
+    inject_maestro_theme,
+    maestro_topbar,
+    maestro_metric_card,
+    maestro_cluster_table,
+)
 
 load_dotenv()
 
@@ -31,86 +37,14 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS ───────────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    .stApp {
-        background: #001E2B;
-        background-image: radial-gradient(ellipse at 20% 0%, #023430 0%, transparent 50%),
-                          radial-gradient(ellipse at 80% 100%, #00200f 0%, transparent 50%);
-    }
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #001a24 0%, #00111a 100%);
-        border-right: 1px solid #00ED6420;
-    }
-    [data-testid="stSidebar"] * { color: #B8C4C2 !important; }
-    [data-testid="stSidebar"] input {
-        background: #002235 !important; border: 1px solid #00ED6430 !important;
-        color: #fff !important; border-radius: 6px !important;
-    }
-    [data-testid="stSidebar"] input:focus { border-color: #00ED64 !important; box-shadow: 0 0 0 2px #00ED6420 !important; }
-    .maestro-logo {
-        font-size: 1.8rem; font-weight: 900;
-        background: linear-gradient(135deg, #00ED64 0%, #00c853 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        background-clip: text; letter-spacing: -1px;
-    }
-    .maestro-sub { font-size: 0.72rem; color: #4a6b5e !important; margin-top: -6px; letter-spacing: 2px; text-transform: uppercase; }
-    .page-title {
-        font-size: 2rem; font-weight: 800;
-        background: linear-gradient(90deg, #00ED64 0%, #00c853 60%, #ffffff 100%);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1.1;
-    }
-    .page-meta { font-size: 0.78rem; color: #3d6b58; letter-spacing: 0.5px; }
-    [data-testid="metric-container"] {
-        background: linear-gradient(135deg, #002235 0%, #001a24 100%);
-        border: 1px solid #00ED6425; border-radius: 12px; padding: 16px 20px !important;
-        box-shadow: 0 4px 24px #00000040, inset 0 1px 0 #00ED6415; transition: border-color 0.2s;
-    }
-    [data-testid="metric-container"]:hover { border-color: #00ED6455; }
-    [data-testid="metric-container"] label { color: #4a8a6e !important; font-size: 0.72rem !important; text-transform: uppercase; letter-spacing: 1px; font-weight: 600 !important; }
-    [data-testid="metric-container"] [data-testid="stMetricValue"] { color: #00ED64 !important; font-size: 2rem !important; font-weight: 800 !important; }
-    [data-testid="stTabs"] [role="tablist"] { background: #001a24; border-radius: 10px; padding: 4px; border: 1px solid #00ED6420; gap: 2px; }
-    [data-testid="stTabs"] [role="tab"] { color: #4a7a60 !important; border-radius: 8px !important; padding: 8px 16px !important; font-weight: 500 !important; font-size: 0.85rem !important; border: none !important; transition: all 0.2s !important; }
-    [data-testid="stTabs"] [role="tab"][aria-selected="true"] { background: linear-gradient(135deg, #00ED6420 0%, #00c85315 100%) !important; color: #00ED64 !important; box-shadow: 0 0 12px #00ED6420 !important; border: 1px solid #00ED6440 !important; }
-    [data-testid="stTabs"] [role="tab"]:hover { color: #00ED64 !important; background: #00ED6410 !important; }
-    [data-testid="stDataFrame"] { border: 1px solid #00ED6420 !important; border-radius: 10px !important; overflow: hidden; }
-    [data-testid="stDataFrame"] thead tr th { background: #002235 !important; color: #00ED64 !important; font-size: 0.75rem !important; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid #00ED6430 !important; }
-    [data-testid="stDataFrame"] tbody tr:hover td { background: #00ED6408 !important; }
-    [data-testid="baseButton-primary"] { background: linear-gradient(135deg, #00ED64 0%, #00c853 100%) !important; color: #001E2B !important; font-weight: 700 !important; border: none !important; border-radius: 8px !important; box-shadow: 0 4px 15px #00ED6430 !important; transition: all 0.2s !important; }
-    [data-testid="baseButton-primary"]:hover { box-shadow: 0 6px 25px #00ED6450 !important; transform: translateY(-1px) !important; }
-    [data-testid="baseButton-secondary"] { background: #002235 !important; color: #00ED64 !important; border: 1px solid #00ED6440 !important; border-radius: 8px !important; font-weight: 600 !important; }
-    [data-testid="baseButton-secondary"]:hover { border-color: #00ED64 !important; box-shadow: 0 0 12px #00ED6420 !important; }
-    [data-testid="stExpander"] { background: #002235 !important; border: 1px solid #00ED6425 !important; border-radius: 10px !important; }
-    [data-testid="stExpander"] summary { color: #00ED64 !important; font-weight: 600 !important; }
-    [data-testid="stAlert"] { border-radius: 10px !important; border-left: 3px solid !important; }
-    code, pre { background: #002235 !important; border: 1px solid #00ED6420 !important; border-radius: 8px !important; color: #00ED64 !important; }
-    hr { border-color: #00ED6420 !important; }
-    [data-testid="stSelectbox"] > div > div { background: #002235 !important; border: 1px solid #00ED6030 !important; border-radius: 8px !important; color: #fff !important; }
-    [data-testid="stSlider"] [role="slider"] { background: #00ED64 !important; box-shadow: 0 0 8px #00ED6460 !important; }
-    [data-testid="stSpinner"] { color: #00ED64 !important; }
-    .stMarkdown, p, li, span { color: #B8C4C2; }
-    h1, h2, h3 { color: #ffffff; }
-    .stSubheader { color: #00ED64 !important; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: #001a24; }
-    ::-webkit-scrollbar-thumb { background: #00ED6440; border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: #00ED64; }
-    .tier-pill { display: inline-block; background: linear-gradient(135deg, #00ED6420, #00c85310); color: #00ED64; border: 1px solid #00ED6450; border-radius: 20px; padding: 2px 12px; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.5px; }
-    .health-grade { font-size: 3rem; font-weight: 900; line-height: 1; }
-    .chat-context-badge { background: #002235; border: 1px solid #00ED6430; border-radius: 8px; padding: 8px 14px; font-size: 0.8rem; color: #00ED64; display: inline-block; margin-bottom: 8px; }
-    [data-testid="stChatInput"] { border: 1px solid #00ED6430 !important; border-radius: 10px !important; background: #002235 !important; }
-    [data-testid="stChatMessageContent"] { background: #002235 !important; border-radius: 10px !important; }
-</style>
-""", unsafe_allow_html=True)
+# ── Theme ─────────────────────────────────────────────────────────────────────
+inject_maestro_theme()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown('<div class="maestro-logo">🎯 Maestro</div>', unsafe_allow_html=True)
-    st.markdown('<div class="maestro-sub">Atlas Control Plane v2.0</div>', unsafe_allow_html=True)
+    st.markdown("### 🎯 Maestro")
+    st.caption("Atlas Control Plane v2.0")
     st.divider()
 
     st.markdown("**🔑 Atlas API**")
@@ -245,17 +179,13 @@ STATUS_ICON = {
     "REPEATING": "🟡 REPEATING",
 }
 
-col_h1, col_h2 = st.columns([6, 1])
-with col_h1:
-    refresh_badge = f"  🔄 {refresh_opt}" if refresh_opt != "Off" else ""
-    st.markdown('<div class="page-title">🎯 Maestro — Atlas Control Plane</div>', unsafe_allow_html=True)
-    st.markdown(
-        f'<div class="page-meta">Org: <code>{org_id}</code> · '
-        f'{len(all_clusters)} cluster(s) · '
-        f'atualizado {datetime.now().strftime("%H:%M:%S")}{refresh_badge}</div>',
-        unsafe_allow_html=True,
-    )
-with col_h2:
+maestro_topbar(
+    org_name=org_id,
+    cluster_count=len(all_clusters),
+    last_update=datetime.now().strftime("%H:%M:%S"),
+)
+_, col_refresh = st.columns([8, 1])
+with col_refresh:
     if st.button("🔄 Atualizar"):
         st.cache_data.clear()
         st.rerun()
@@ -372,36 +302,39 @@ with tab_clusters:
         st.warning("Nenhum cluster encontrado. Verifique as permissões da API Key.")
     else:
         df = pd.DataFrame(all_clusters)
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Total Clusters", len(df))
-        c2.metric("Projetos",       df["project_name"].nunique())
-        c3.metric("Ativos (IDLE)",  len(df[df["status"] == "IDLE"]))
         dedicated = df[~df["tier"].isin(["Free/Shared"])]
         top_tier  = dedicated["tier"].value_counts().index[0] if len(dedicated) else "—"
-        c4.metric("Tier + comum",   top_tier)
-
-        # Alertas abertos (soma todos os projetos)
         total_alerts = 0
         for proj_id_a in df["project_id"].unique():
             total_alerts += len(client.get_open_alerts(proj_id_a))
-        c5.metric("🔔 Alertas Abertos", total_alerts, delta=None if total_alerts == 0 else f"{total_alerts} ativos",
-                  delta_color="inverse" if total_alerts > 0 else "off")
+
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1: maestro_metric_card("Total Clusters",  str(len(df)))
+        with c2: maestro_metric_card("Projetos",        str(df["project_name"].nunique()))
+        with c3: maestro_metric_card("Ativos (IDLE)",   str(len(df[df["status"] == "IDLE"])), color="green")
+        with c4: maestro_metric_card("Tier + comum",    top_tier, color="cyan")
+        with c5: maestro_metric_card(
+            "🔔 Alertas Abertos", str(total_alerts),
+            color="yellow" if total_alerts > 0 else "default",
+            badge="" if total_alerts > 0 else "OK",
+        )
         st.divider()
 
-        df_display = df.copy()
-        df_display["status"]  = df_display["status"].apply(lambda s: STATUS_ICON.get(s, f"⚪ {s}"))
-        df_display["💰 Est. Mensal"] = df_display["tier"].apply(
-            lambda t: f"${AtlasClient.estimate_cost(t, usd_brl)['usd']:,.0f} / R${AtlasClient.estimate_cost(t, usd_brl)['brl']:,.0f}"
-        )
-        df_display = df_display.rename(columns={
-            "project_name": "Projeto", "cluster_name": "Cluster",
-            "tier": "Tier", "region": "Região", "status": "Status",
-            "mongo_version": "MongoDB", "cluster_type": "Tipo",
-        })
-        st.dataframe(
-            df_display[["Projeto","Cluster","Tier","Região","Status","MongoDB","Tipo","💰 Est. Mensal"]],
-            use_container_width=True, hide_index=True,
-        )
+        _table_rows = []
+        for _c in all_clusters:
+            _cost = AtlasClient.estimate_cost(_c["tier"], usd_brl)
+            _table_rows.append({
+                "projeto": _c["project_name"],
+                "cluster": _c["cluster_name"],
+                "tier":    _c["tier"],
+                "regiao":  _c["region"],
+                "status":  _c["status"],
+                "mongodb": _c["mongo_version"],
+                "tipo":    _c["cluster_type"],
+                "usd":     f"${_cost['usd']:,.0f}",
+                "brl":     f"R${_cost['brl']:,.0f}",
+            })
+        maestro_cluster_table(_table_rows)
 
         if len(dedicated) > 0:
             st.divider()
@@ -575,13 +508,13 @@ with tab_scale:
         cluster_name_sc, row_sc   = cluster_selector(in_proj_sc, "sc")
         current_tier              = row_sc.get("tier", "N/A")
 
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Cluster",    cluster_name_sc)
-        m2.metric("Tier Atual", current_tier)
-        m3.metric("Região",     row_sc.get("region", "—"))
         curr_cost = AtlasClient.estimate_cost(current_tier, usd_brl)
-        m4.metric("Custo Est./mês", f"R$ {curr_cost['brl']:,.0f}",
-                  help=f"≈ USD {curr_cost['usd']:,} · estimativa AWS us-east-1")
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: maestro_metric_card("Cluster",       cluster_name_sc)
+        with m2: maestro_metric_card("Tier Atual",    current_tier, color="cyan")
+        with m3: maestro_metric_card("Região",        row_sc.get("region", "—"))
+        with m4: maestro_metric_card("Custo Est./mês", f"R$ {curr_cost['brl']:,.0f}",
+                                     sub=f"≈ USD {curr_cost['usd']:,}")
         st.divider()
 
         is_nvme  = "_NVME" in current_tier
@@ -662,17 +595,18 @@ with tab_finops:
         total_brl = df_cost["BRL/mês"].sum()
 
         # KPIs
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Total est. USD/mês", f"${total_usd:,.0f}")
-        k2.metric("Total est. BRL/mês", f"R$ {total_brl:,.0f}")
-        k3.metric("Média por cluster",  f"R$ {(total_brl / len(df_cost) if df_cost is not None and len(df_cost) > 0 else 0):,.0f}")
         top_cost = df_cost.loc[df_cost["USD/mês"].idxmax(), "cluster_name"] if len(df_cost) > 0 else "—"
-        k4.metric("Maior custo",        top_cost)
+        invoice  = client.get_pending_invoice()
+        inv_usd  = invoice.get("amountBilledCents", 0) / 100 if invoice else 0
+        avg_brl  = total_brl / len(df_cost) if len(df_cost) > 0 else 0
 
-        # Fatura pendente real do Atlas
-        invoice = client.get_pending_invoice()
-        inv_usd = invoice.get("amountBilledCents", 0) / 100 if invoice else 0
-        k5.metric("💳 Fatura Atual (USD)", f"${inv_usd:,.2f}", help="Valor acumulado na fatura pendente do Atlas")
+        k1, k2, k3, k4, k5 = st.columns(5)
+        with k1: maestro_metric_card("Total est. USD/mês", f"${total_usd:,.0f}")
+        with k2: maestro_metric_card("Total est. BRL/mês", f"R$ {total_brl:,.0f}", color="green")
+        with k3: maestro_metric_card("Média por cluster",  f"R$ {avg_brl:,.0f}")
+        with k4: maestro_metric_card("Maior custo",        top_cost, color="yellow")
+        with k5: maestro_metric_card("💳 Fatura Atual (USD)", f"${inv_usd:,.2f}",
+                                     sub="valor acumulado na fatura pendente")
         st.divider()
 
         # Cost table
@@ -952,9 +886,11 @@ with tab_health:
             with col_info:
                 st.markdown(f"### `{cluster_name_hs}`")
                 i1, i2, i3 = st.columns(3)
-                i1.metric("Tier",    row_hs.get("tier","—"))
-                i2.metric("PA Sugestões", n_pa)
-                i3.metric("Slow Queries", n_sq)
+                with i1: maestro_metric_card("Tier", row_hs.get("tier", "—"), color="cyan")
+                with i2: maestro_metric_card("PA Sugestões", str(n_pa),
+                                             color="yellow" if n_pa > 0 else "green")
+                with i3: maestro_metric_card("Slow Queries", str(n_sq),
+                                             color="yellow" if n_sq > 0 else "green")
                 st.divider()
 
                 if hs["issues"]:
