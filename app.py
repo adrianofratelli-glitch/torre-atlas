@@ -20,12 +20,7 @@ from ai_agent import (
     build_chat_system_prompt,
     generate_pdf_report,
 )
-from streamlit_maestro_theme import (
-    inject_maestro_theme,
-    maestro_topbar,
-    maestro_metric_card,
-    maestro_cluster_table,
-)
+from streamlit_maestro_theme import maestro_cluster_table
 
 load_dotenv()
 
@@ -37,26 +32,473 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Theme ─────────────────────────────────────────────────────────────────────
-inject_maestro_theme()
+# ── Theme — MongoDB Atlas Design System ──────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ══ MongoDB official palette ══════════════════════════════════════════════ */
+:root {
+    /* backgrounds */
+    --bg:       #001E2B;   /* MongoDB Atlas void */
+    --surface:  #023430;   /* elevated surface   */
+    --card:     #00111A;   /* card / modal        */
+    --card2:    #002235;   /* secondary card     */
+
+    /* MongoDB greens */
+    --green:    #00ED64;
+    --green-2:  #00A35C;
+    --green-3:  #023430;
+    --green-lo: rgba(0,237,100,0.08);
+    --green-md: rgba(0,237,100,0.18);
+    --green-bd: rgba(0,237,100,0.22);
+
+    /* text */
+    --text:     #E3FCF7;   /* MongoDB warm white */
+    --sub:      #89979B;
+    --muted:    #3D5A6C;
+
+    /* semantic */
+    --yellow:   #FACC15;
+    --red:      #F87171;
+    --blue:     #0B66DC;   /* MongoDB accent blue */
+    --teal:     #00D2FF;
+
+    /* borders */
+    --border:   rgba(0,237,100,0.12);
+    --border-2: rgba(255,255,255,0.06);
+
+    --font: 'Plus Jakarta Sans', 'Helvetica Neue', Arial, sans-serif;
+    --mono: 'IBM Plex Mono', 'Courier New', monospace;
+}
+
+/* ══ GLOBAL ════════════════════════════════════════════════════════════════ */
+.stApp {
+    background: var(--bg) !important;
+    font-family: var(--font) !important;
+    color: var(--text) !important;
+}
+#MainMenu, footer, header { visibility: hidden !important; }
+.block-container {
+    padding-top: 0 !important;
+    padding-bottom: 3rem !important;
+    max-width: 1440px !important;
+}
+h1,h2,h3,h4,h5 {
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    font-weight: 700 !important;
+}
+p, li, span { color: var(--sub); font-family: var(--font); }
+label { color: var(--sub) !important; font-family: var(--font) !important; }
+
+/* ══ TOPBAR (pinned green bar) ══════════════════════════════════════════════ */
+.mdb-topbar {
+    background: var(--surface);
+    border-bottom: 2px solid var(--green);
+    padding: 14px 0 12px;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+.mdb-logo-leaf {
+    width: 28px; height: 28px;
+    background: var(--green);
+    clip-path: polygon(50% 0%,85% 15%,100% 50%,85% 85%,50% 100%,15% 85%,0% 50%,15% 15%);
+}
+.mdb-topbar-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--text);
+    font-family: var(--font);
+    letter-spacing: -0.3px;
+}
+.mdb-topbar-title em { color: var(--green); font-style: normal; }
+.mdb-topbar-meta {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-left: auto;
+    padding-right: 8px;
+}
+
+/* ══ SIDEBAR ════════════════════════════════════════════════════════════════ */
+[data-testid="stSidebar"] {
+    background: var(--card2) !important;
+    border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] * {
+    color: var(--sub) !important;
+    font-family: var(--font) !important;
+}
+[data-testid="stSidebar"] strong,
+[data-testid="stSidebar"] b { color: var(--text) !important; }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: var(--muted) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.4px !important;
+}
+[data-testid="stSidebar"] .stMarkdown p { font-size: 11px !important; }
+[data-testid="stSidebar"] input {
+    background: var(--bg) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 5px !important;
+    color: var(--text) !important;
+    font-family: var(--mono) !important;
+    font-size: 12px !important;
+    padding: 7px 10px !important;
+    transition: border-color .15s, box-shadow .15s !important;
+}
+[data-testid="stSidebar"] input:focus {
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 2px var(--green-lo) !important;
+    outline: none !important;
+}
+[data-testid="stSidebar"] hr {
+    border-color: var(--border-2) !important;
+    margin: 12px 0 !important;
+}
+
+/* ══ METRICS (native st.metric) ═════════════════════════════════════════════ */
+[data-testid="metric-container"] {
+    background: var(--card2) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    padding: 18px 20px 16px !important;
+    position: relative !important;
+    overflow: hidden !important;
+    transition: border-color .2s, box-shadow .2s !important;
+}
+[data-testid="metric-container"]::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--green) 0%, var(--green-2) 100%);
+    opacity: 0;
+    transition: opacity .2s;
+}
+[data-testid="metric-container"]:hover {
+    border-color: var(--green-bd) !important;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 0 0 1px var(--green-lo) !important;
+}
+[data-testid="metric-container"]:hover::before { opacity: 1; }
+[data-testid="metric-container"] label {
+    color: var(--muted) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.4px !important;
+    font-family: var(--font) !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: var(--text) !important;
+    font-size: 26px !important;
+    font-weight: 700 !important;
+    font-family: var(--mono) !important;
+    line-height: 1.2 !important;
+    letter-spacing: -0.5px !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricDelta"] {
+    font-size: 11px !important;
+    font-family: var(--mono) !important;
+    margin-top: 2px !important;
+}
+
+/* ══ TABS (MongoDB docs underline style) ════════════════════════════════════ */
+[data-testid="stTabs"] [role="tablist"] {
+    background: transparent !important;
+    border-bottom: 1px solid var(--border-2) !important;
+    padding: 0 !important;
+    gap: 0 !important;
+}
+[data-testid="stTabs"] [role="tab"] {
+    background: transparent !important;
+    color: var(--muted) !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    padding: 12px 18px !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    margin-bottom: -1px !important;
+    transition: color .15s, border-color .15s !important;
+    letter-spacing: 0.01em !important;
+}
+[data-testid="stTabs"] [role="tab"]:hover { color: var(--sub) !important; }
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--green) !important;
+    border-bottom-color: var(--green) !important;
+    font-weight: 600 !important;
+}
+[data-testid="stTabs"] [data-baseweb="tab-panel"] {
+    padding-top: 28px !important;
+}
+
+/* ══ BUTTONS (MongoDB CTA style) ════════════════════════════════════════════ */
+[data-testid="baseButton-primary"] {
+    background: var(--green) !important;
+    color: #001E2B !important;
+    border: none !important;
+    border-radius: 5px !important;
+    font-family: var(--font) !important;
+    font-weight: 700 !important;
+    font-size: 13px !important;
+    letter-spacing: 0.01em !important;
+    padding: 8px 20px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 0 20px rgba(0,237,100,0.2) !important;
+    transition: background .15s, box-shadow .15s, transform .1s !important;
+}
+[data-testid="baseButton-primary"]:hover {
+    background: #00FF6E !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 28px rgba(0,237,100,0.35) !important;
+    transform: translateY(-1px) !important;
+}
+[data-testid="baseButton-secondary"] {
+    background: transparent !important;
+    color: var(--sub) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 5px !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    transition: border-color .15s, color .15s, background .15s !important;
+}
+[data-testid="baseButton-secondary"]:hover {
+    border-color: var(--green-bd) !important;
+    color: var(--green) !important;
+    background: var(--green-lo) !important;
+}
+
+/* ══ DATAFRAME ══════════════════════════════════════════════════════════════ */
+[data-testid="stDataFrame"] {
+    border: 1px solid var(--border-2) !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+[data-testid="stDataFrame"] thead th {
+    background: var(--card2) !important;
+    color: var(--muted) !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 1.2px !important;
+    border-bottom: 1px solid var(--border-2) !important;
+    padding: 10px 14px !important;
+    font-family: var(--font) !important;
+}
+[data-testid="stDataFrame"] tbody td {
+    color: var(--sub) !important;
+    font-family: var(--mono) !important;
+    font-size: 12px !important;
+    border-color: var(--border-2) !important;
+    padding: 10px 14px !important;
+}
+[data-testid="stDataFrame"] tbody tr:hover td {
+    background: var(--green-lo) !important;
+    color: var(--text) !important;
+}
+
+/* ══ INPUTS ═════════════════════════════════════════════════════════════════ */
+.stTextInput > div > div > input,
+.stNumberInput input {
+    background: var(--card) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 5px !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+    transition: border-color .15s, box-shadow .15s !important;
+}
+.stTextInput > div > div > input:focus,
+.stNumberInput input:focus {
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 2px var(--green-lo) !important;
+    outline: none !important;
+}
+
+/* ══ SELECTBOX ══════════════════════════════════════════════════════════════ */
+.stSelectbox > div > div,
+[data-baseweb="select"] > div {
+    background: var(--card) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 5px !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+}
+[data-baseweb="popover"] ul {
+    background: var(--card2) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5) !important;
+}
+[data-baseweb="popover"] ul li {
+    color: var(--sub) !important;
+    font-size: 13px !important;
+    font-family: var(--font) !important;
+    padding: 8px 14px !important;
+}
+[data-baseweb="popover"] ul li:hover {
+    background: var(--green-lo) !important;
+    color: var(--green) !important;
+}
+
+/* ══ SLIDER ═════════════════════════════════════════════════════════════════ */
+[data-testid="stSlider"] [role="slider"] {
+    background: var(--green) !important;
+    box-shadow: 0 0 0 3px var(--green-lo), 0 0 10px rgba(0,237,100,0.4) !important;
+}
+[data-testid="stSlider"] [data-testid="stTickBar"] { color: var(--muted) !important; }
+
+/* ══ EXPANDER ═══════════════════════════════════════════════════════════════ */
+[data-testid="stExpander"] {
+    background: var(--card2) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+[data-testid="stExpander"] summary {
+    color: var(--sub) !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    padding: 12px 16px !important;
+}
+[data-testid="stExpander"] summary:hover { color: var(--green) !important; }
+
+/* ══ ALERTS ═════════════════════════════════════════════════════════════════ */
+[data-testid="stAlert"] {
+    border-radius: 6px !important;
+    border: none !important;
+    border-left: 3px solid !important;
+    font-family: var(--font) !important;
+    font-size: 13px !important;
+}
+.stSuccess {
+    background: rgba(0,237,100,0.07) !important;
+    border-left-color: var(--green) !important;
+    color: #7FFFC4 !important;
+}
+.stWarning {
+    background: rgba(250,204,21,0.07) !important;
+    border-left-color: var(--yellow) !important;
+    color: var(--yellow) !important;
+}
+.stError {
+    background: rgba(248,113,113,0.07) !important;
+    border-left-color: var(--red) !important;
+    color: var(--red) !important;
+}
+.stInfo {
+    background: rgba(11,102,220,0.08) !important;
+    border-left-color: var(--blue) !important;
+    color: #93C5FD !important;
+}
+
+/* ══ CODE ═══════════════════════════════════════════════════════════════════ */
+code, pre, .stJson {
+    background: var(--card) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 6px !important;
+    color: var(--green) !important;
+    font-family: var(--mono) !important;
+    font-size: 12px !important;
+}
+
+/* ══ DIVIDER ════════════════════════════════════════════════════════════════ */
+hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
+
+/* ══ CHAT ═══════════════════════════════════════════════════════════════════ */
+[data-testid="stChatMessage"] {
+    background: var(--card2) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 10px !important;
+    padding: 16px !important;
+    margin-bottom: 10px !important;
+}
+[data-testid="stChatInput"] textarea {
+    background: var(--card) !important;
+    border: 1px solid var(--border-2) !important;
+    border-radius: 8px !important;
+    color: var(--text) !important;
+    font-family: var(--font) !important;
+    font-size: 14px !important;
+}
+[data-testid="stChatInput"] textarea:focus {
+    border-color: var(--green) !important;
+    box-shadow: 0 0 0 2px var(--green-lo) !important;
+}
+[data-testid="stChatInput"] button {
+    background: var(--green) !important;
+    border-radius: 6px !important;
+}
+
+/* ══ MISC ═══════════════════════════════════════════════════════════════════ */
+.stSpinner > div { border-top-color: var(--green) !important; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,237,100,0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,237,100,0.35); }
+
+/* ══ CUSTOM CLASSES ══════════════════════════════════════════════════════════ */
+.health-grade {
+    font-size: 3rem !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    font-family: var(--mono) !important;
+}
+.chat-context-badge {
+    background: var(--card);
+    border: 1px solid var(--green-bd);
+    border-radius: 5px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--green);
+    display: inline-block;
+    margin-bottom: 10px;
+    font-family: var(--mono);
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("### 🎯 Maestro")
-    st.caption("Atlas Control Plane v2.0")
+    # ── MongoDB leaf logo + brand ──────────────────────────────────────────
+    st.markdown("""
+    <div style="padding:18px 4px 14px;border-bottom:1px solid rgba(0,237,100,0.12);margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>
+        </svg>
+        <div>
+          <div style="font-size:15px;font-weight:800;color:#E3FCF7;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.2px;line-height:1.2;">Maestro</div>
+          <div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.8px;font-family:'Plus Jakarta Sans',sans-serif;margin-top:1px;">Atlas Control Plane · v2.0</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
     st.divider()
 
-    st.markdown("**🔑 Atlas API**")
+    st.markdown("### 🔑 Atlas API")
     pub_key     = st.text_input("Public Key",  value=os.getenv("ATLAS_PUBLIC_KEY",  ""), type="password")
     priv_key    = st.text_input("Private Key", value=os.getenv("ATLAS_PRIVATE_KEY", ""), type="password")
     org_id      = st.text_input("Org ID",      value=os.getenv("ATLAS_ORG_ID",      ""))
     proj_id_env = st.text_input("Project ID",  value=os.getenv("ATLAS_PROJECT_ID",  ""))
 
-    st.markdown("**🤖 Anthropic API**")
+    st.markdown("### 🤖 Anthropic API")
     ant_key = st.text_input("API Key", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
 
-    st.markdown("**🔗 MongoDB Connection (opcional)**")
+    st.markdown("### 🔗 MongoDB Connection")
     mongo_uri = st.text_input(
         "Connection String",
         value=os.getenv("MONGODB_URI", ""),
@@ -65,7 +507,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.markdown("**⚙️ Configurações**")
+    st.markdown("### ⚙️ Configurações")
     usd_brl = st.number_input("USD/BRL (cotação)", value=5.70, step=0.05, format="%.2f",
                                help="Usado para estimativas de custo em BRL")
     refresh_opt = st.selectbox("Auto-refresh", ["Off", "30s", "60s", "120s"], index=0)
@@ -179,14 +621,30 @@ STATUS_ICON = {
     "REPEATING": "🟡 REPEATING",
 }
 
-maestro_topbar(
-    org_name=org_id,
-    cluster_count=len(all_clusters),
-    last_update=datetime.now().strftime("%H:%M:%S"),
-)
-_, col_refresh = st.columns([8, 1])
-with col_refresh:
-    if st.button("🔄 Atualizar"):
+refresh_badge = f"&nbsp;·&nbsp;🔄 {refresh_opt}" if refresh_opt != "Off" else ""
+_hcol, _rcol = st.columns([8, 1])
+with _hcol:
+    st.markdown(
+        f'<div style="'
+        f'background:linear-gradient(90deg,#023430 0%,#001E2B 60%);'
+        f'border-bottom:2px solid #00ED64;'
+        f'border-radius:8px 8px 0 0;'
+        f'padding:16px 22px 14px;'
+        f'display:flex;align-items:center;gap:14px;margin-bottom:6px;">'
+        f'<svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>'
+        f'</svg>'
+        f'<div>'
+        f'<div style="font-size:18px;font-weight:800;color:#E3FCF7;font-family:\'Plus Jakarta Sans\',sans-serif;letter-spacing:-0.3px;line-height:1.1;">'
+        f'Maestro <span style="color:#00ED64;">Atlas Control Plane</span></div>'
+        f'<div style="font-size:11px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;margin-top:2px;">'
+        f'org:&nbsp;{org_id}&nbsp;&nbsp;·&nbsp;&nbsp;{len(all_clusters)}&nbsp;cluster(s)&nbsp;&nbsp;·&nbsp;&nbsp;{datetime.now().strftime("%H:%M:%S")}{refresh_badge}</div>'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+with _rcol:
+    st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh"):
         st.cache_data.clear()
         st.rerun()
 
@@ -309,15 +767,13 @@ with tab_clusters:
             total_alerts += len(client.get_open_alerts(proj_id_a))
 
         c1, c2, c3, c4, c5 = st.columns(5)
-        with c1: maestro_metric_card("Total Clusters",  str(len(df)))
-        with c2: maestro_metric_card("Projetos",        str(df["project_name"].nunique()))
-        with c3: maestro_metric_card("Ativos (IDLE)",   str(len(df[df["status"] == "IDLE"])), color="green")
-        with c4: maestro_metric_card("Tier + comum",    top_tier, color="cyan")
-        with c5: maestro_metric_card(
-            "🔔 Alertas Abertos", str(total_alerts),
-            color="yellow" if total_alerts > 0 else "default",
-            badge="" if total_alerts > 0 else "OK",
-        )
+        c1.metric("Total Clusters",  len(df))
+        c2.metric("Projetos",        df["project_name"].nunique())
+        c3.metric("Ativos (IDLE)",   len(df[df["status"] == "IDLE"]))
+        c4.metric("Tier + comum",    top_tier)
+        c5.metric("Alertas Abertos", total_alerts,
+                  delta=f"{total_alerts} abertos" if total_alerts > 0 else "nenhum",
+                  delta_color="inverse" if total_alerts > 0 else "off")
         st.divider()
 
         _table_rows = []
@@ -510,11 +966,11 @@ with tab_scale:
 
         curr_cost = AtlasClient.estimate_cost(current_tier, usd_brl)
         m1, m2, m3, m4 = st.columns(4)
-        with m1: maestro_metric_card("Cluster",       cluster_name_sc)
-        with m2: maestro_metric_card("Tier Atual",    current_tier, color="cyan")
-        with m3: maestro_metric_card("Região",        row_sc.get("region", "—"))
-        with m4: maestro_metric_card("Custo Est./mês", f"R$ {curr_cost['brl']:,.0f}",
-                                     sub=f"≈ USD {curr_cost['usd']:,}")
+        m1.metric("Cluster",       cluster_name_sc)
+        m2.metric("Tier Atual",    current_tier)
+        m3.metric("Região",        row_sc.get("region", "—"))
+        m4.metric("Custo Est./mês", f"R$ {curr_cost['brl']:,.0f}",
+                  delta=f"≈ USD {curr_cost['usd']:,}", delta_color="off")
         st.divider()
 
         is_nvme  = "_NVME" in current_tier
@@ -601,12 +1057,12 @@ with tab_finops:
         avg_brl  = total_brl / len(df_cost) if len(df_cost) > 0 else 0
 
         k1, k2, k3, k4, k5 = st.columns(5)
-        with k1: maestro_metric_card("Total est. USD/mês", f"${total_usd:,.0f}")
-        with k2: maestro_metric_card("Total est. BRL/mês", f"R$ {total_brl:,.0f}", color="green")
-        with k3: maestro_metric_card("Média por cluster",  f"R$ {avg_brl:,.0f}")
-        with k4: maestro_metric_card("Maior custo",        top_cost, color="yellow")
-        with k5: maestro_metric_card("💳 Fatura Atual (USD)", f"${inv_usd:,.2f}",
-                                     sub="valor acumulado na fatura pendente")
+        k1.metric("Total est. USD/mês", f"${total_usd:,.0f}")
+        k2.metric("Total est. BRL/mês", f"R$ {total_brl:,.0f}")
+        k3.metric("Média por cluster",  f"R$ {avg_brl:,.0f}")
+        k4.metric("Maior custo",        top_cost)
+        k5.metric("Fatura Atual (USD)", f"${inv_usd:,.2f}",
+                  delta="fatura pendente", delta_color="off")
         st.divider()
 
         # Cost table
@@ -886,11 +1342,13 @@ with tab_health:
             with col_info:
                 st.markdown(f"### `{cluster_name_hs}`")
                 i1, i2, i3 = st.columns(3)
-                with i1: maestro_metric_card("Tier", row_hs.get("tier", "—"), color="cyan")
-                with i2: maestro_metric_card("PA Sugestões", str(n_pa),
-                                             color="yellow" if n_pa > 0 else "green")
-                with i3: maestro_metric_card("Slow Queries", str(n_sq),
-                                             color="yellow" if n_sq > 0 else "green")
+                i1.metric("Tier",         row_hs.get("tier", "—"))
+                i2.metric("PA Sugestões", n_pa,
+                          delta=f"{n_pa} pendentes" if n_pa > 0 else "nenhuma",
+                          delta_color="inverse" if n_pa > 0 else "off")
+                i3.metric("Slow Queries", n_sq,
+                          delta=f"{n_sq} registradas" if n_sq > 0 else "nenhuma",
+                          delta_color="inverse" if n_sq > 0 else "off")
                 st.divider()
 
                 if hs["issues"]:
