@@ -6,7 +6,7 @@ import json
 import anthropic
 from typing import Iterator
 
-MODEL = "claude-haiku-4-5-20251001"
+MODEL = "claude-sonnet-4-6"
 
 
 # ══════════════════════════════════════════════════════════════════════════════

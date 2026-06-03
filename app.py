@@ -372,13 +372,20 @@ with tab_clusters:
         st.warning("Nenhum cluster encontrado. Verifique as permissões da API Key.")
     else:
         df = pd.DataFrame(all_clusters)
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Total Clusters", len(df))
         c2.metric("Projetos",       df["project_name"].nunique())
         c3.metric("Ativos (IDLE)",  len(df[df["status"] == "IDLE"]))
         dedicated = df[~df["tier"].isin(["Free/Shared"])]
         top_tier  = dedicated["tier"].value_counts().index[0] if len(dedicated) else "—"
         c4.metric("Tier + comum",   top_tier)
+
+        # Alertas abertos (soma todos os projetos)
+        total_alerts = 0
+        for proj_id_a in df["project_id"].unique():
+            total_alerts += len(client.get_open_alerts(proj_id_a))
+        c5.metric("🔔 Alertas Abertos", total_alerts, delta=None if total_alerts == 0 else f"{total_alerts} ativos",
+                  delta_color="inverse" if total_alerts > 0 else "off")
         st.divider()
 
         df_display = df.copy()
@@ -484,6 +491,24 @@ with tab_pa:
                                     st.error(result)
                         else:
                             st.caption("💡 Configure a **Connection String** na sidebar para criar o índice com 1 clique")
+
+                # ── AI Analysis button (shown once after all suggestions) ──
+                st.divider()
+                if st.button("🤖 Analisar com AI (Claude)", key="btn_pa_ai", type="primary"):
+                    with st.spinner("Claude analisando o cluster…"):
+                        try:
+                            full_c = client.get_cluster(proj_id_pa, cluster_name_pa)
+                            sq_r   = client.get_slow_queries(proj_id_pa,
+                                         client.get_primary(proj_id_pa, cluster_name_pa) or "")
+                            with st.chat_message("assistant"):
+                                holder = st.empty()
+                                text   = ""
+                                for chunk in analyze_cluster_stream(full_c, st.session_state["pa_data"], sq_r):
+                                    text += chunk
+                                    holder.markdown(text + "▌")
+                                holder.markdown(text)
+                        except Exception as e:
+                            st.error(f"Erro na análise AI: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -637,12 +662,17 @@ with tab_finops:
         total_brl = df_cost["BRL/mês"].sum()
 
         # KPIs
-        k1, k2, k3, k4 = st.columns(4)
+        k1, k2, k3, k4, k5 = st.columns(5)
         k1.metric("Total est. USD/mês", f"${total_usd:,.0f}")
         k2.metric("Total est. BRL/mês", f"R$ {total_brl:,.0f}")
         k3.metric("Média por cluster",  f"R$ {(total_brl / len(df_cost) if df_cost is not None and len(df_cost) > 0 else 0):,.0f}")
         top_cost = df_cost.loc[df_cost["USD/mês"].idxmax(), "cluster_name"] if len(df_cost) > 0 else "—"
         k4.metric("Maior custo",        top_cost)
+
+        # Fatura pendente real do Atlas
+        invoice = client.get_pending_invoice()
+        inv_usd = invoice.get("amountBilledCents", 0) / 100 if invoice else 0
+        k5.metric("💳 Fatura Atual (USD)", f"${inv_usd:,.2f}", help="Valor acumulado na fatura pendente do Atlas")
         st.divider()
 
         # Cost table
@@ -1141,7 +1171,7 @@ with tab_chat:
                         st.session_state.get("chat_context_name", "Chat"), hist_md
                     )
                     st.download_button(
-                        "📄 Exportar", data=pdf_bytes,
+                        "📄 Exportar (.md)", data=pdf_bytes,
                         file_name=f"maestro_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
                         mime="text/markdown", use_container_width=True,
                     )

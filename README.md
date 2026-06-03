@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-red)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-green)
-![Claude](https://img.shields.io/badge/Claude-Haiku-orange)
+![Claude](https://img.shields.io/badge/Claude-Sonnet_4.6-orange)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
@@ -15,11 +15,11 @@
 
 | Aba | Descrição |
 |-----|-----------|
-| 🏗️ **Clusters** | Visão geral de todos os clusters da org com status, tier, região e custo estimado |
-| ⚡ **Performance Advisor** | Índices sugeridos pelo Atlas PA com 1-click copy e execução direta via pymongo |
+| 🏗️ **Clusters** | Visão geral de todos os clusters da org com status, tier, região, custo estimado e **alertas abertos** |
+| ⚡ **Performance Advisor** | Índices sugeridos pelo Atlas PA com 1-click copy, execução direta via pymongo e **análise AI com Claude** |
 | 🔍 **Query Profiler** | Slow queries com histograma de latência |
 | 📈 **Scale** | Scale up/down com preview de custo antes de confirmar |
-| 💰 **FinOps** | Estimativa de custo por cluster/projeto + simulador de cenários |
+| 💰 **FinOps** | Estimativa de custo por cluster/projeto + simulador de cenários + **fatura pendente real do Atlas** |
 | 📊 **Compare** | Comparativo side-by-side entre 2 clusters com radar chart |
 | 🏥 **Health Score** | Score 0–100 por cluster com gauge chart e breakdown de penalizações |
 | 💬 **AI Chat** | Chat conversacional com Claude usando contexto real do cluster (PA + slow queries + métricas de hardware) com histórico persistido no Atlas |
@@ -60,8 +60,8 @@ maestro/
 ### 1. Clone o repositório
 
 ```bash
-git clone https://github.com/seu-usuario/maestro.git
-cd maestro
+git clone https://github.com/adrianofratelli-glitch/maestro-atlas.git
+cd maestro-atlas
 ```
 
 ### 2. Crie o ambiente virtual e instale as dependências
@@ -158,7 +158,7 @@ Fonte de referência: [atlas.mongodb.com/pricing](https://www.mongodb.com/pricin
 │  System Prompt (enriquecido com dados reais)         │
 │           │                                          │
 │           ▼                                          │
-│  Claude claude-haiku-4-5 (streaming)                 │
+│  Claude Sonnet 4.6 (streaming)                       │
 │           │                                          │
 │           ▼                                          │
 │  MongoDB Atlas ← Persistência do histórico           │

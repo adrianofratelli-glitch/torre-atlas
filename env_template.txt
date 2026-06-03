@@ -1,0 +1,11 @@
+# ── MongoDB Atlas API ─────────────────────────────────────────────────────────
+ATLAS_PUBLIC_KEY=
+ATLAS_PRIVATE_KEY=
+ATLAS_ORG_ID=
+ATLAS_PROJECT_ID=
+
+# ── Anthropic ─────────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=
+
+# ── MongoDB Connection String (opcional — para criar índices direto) ──────────
+MONGODB_URI=

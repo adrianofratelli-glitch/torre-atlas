@@ -26,10 +26,13 @@ from pymongo.collection import Collection
 DB_NAME   = "maestro"
 COLL_NAME = "chat_history"
 
+_clients: dict = {}
+
 # ── Conexão ───────────────────────────────────────────────────────────────────
 def _get_collection(mongo_uri: str) -> Collection:
-    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
-    return client[DB_NAME][COLL_NAME]
+    if mongo_uri not in _clients:
+        _clients[mongo_uri] = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+    return _clients[mongo_uri][DB_NAME][COLL_NAME]
 
 
 def init_db(mongo_uri: str):
