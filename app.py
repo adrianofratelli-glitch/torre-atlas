@@ -467,6 +467,145 @@ hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
     font-family: var(--mono);
 }
 
+/* ══ KPI CARDS (mdb_kpi_row) ═════════════════════════════════════════════════
+   Replicates the MongoDB dashboard card style:
+   colored top border · large mono value · uppercase label
+   ══════════════════════════════════════════════════════════════════════════ */
+.mdb-kpi-row {
+    display: flex;
+    gap: 14px;
+    margin: 20px 0 28px;
+    width: 100%;
+}
+.mdb-kpi-card {
+    flex: 1;
+    background: var(--card2);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-top: 3px solid var(--green);
+    border-radius: 0 0 8px 8px;
+    padding: 18px 20px 16px;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow .2s, border-color .2s;
+    cursor: default;
+}
+.mdb-kpi-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: radial-gradient(ellipse at top left, rgba(255,255,255,0.025) 0%, transparent 70%);
+    pointer-events: none;
+}
+.mdb-kpi-card:hover {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45);
+    border-color: rgba(255,255,255,0.1);
+}
+.mdb-kpi-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--muted);
+    font-family: var(--font);
+    margin-bottom: 10px;
+}
+.mdb-kpi-value {
+    font-size: 30px;
+    font-weight: 700;
+    font-family: var(--mono);
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+    color: var(--text);
+}
+.mdb-kpi-delta {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-top: 6px;
+}
+.mdb-kpi-delta.up   { color: var(--green); }
+.mdb-kpi-delta.down { color: #F87171; }
+.mdb-kpi-delta.warn { color: #FACC15; }
+
+/* ══ SECTION HEADERS (mdb_section_header) ════════════════════════════════════ */
+.mdb-section-hdr {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 28px 0 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.mdb-section-hdr-title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.8px;
+    color: var(--sub);
+    font-family: var(--font);
+}
+.mdb-section-hdr-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    letter-spacing: 0.4px;
+}
+.mdb-section-hdr-badge.green {
+    background: rgba(0,237,100,0.1);
+    color: var(--green);
+    border: 1px solid rgba(0,237,100,0.22);
+}
+.mdb-section-hdr-badge.yellow {
+    background: rgba(250,204,21,0.1);
+    color: #FACC15;
+    border: 1px solid rgba(250,204,21,0.22);
+}
+.mdb-section-hdr-badge.blue {
+    background: rgba(56,189,248,0.1);
+    color: #38BDF8;
+    border: 1px solid rgba(56,189,248,0.22);
+}
+.mdb-section-hdr-sub {
+    font-size: 11px;
+    color: var(--muted);
+    font-family: var(--mono);
+    margin-left: auto;
+}
+
+/* ══ SIDEBAR NAV SECTION LABELS ══════════════════════════════════════════════ */
+.mdb-nav-section {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: #3D5A6C;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    padding: 14px 0 6px;
+}
+.mdb-cluster-pill {
+    background: rgba(0,237,100,0.08);
+    border: 1px solid rgba(0,237,100,0.2);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 12px;
+}
+.mdb-cluster-pill-label {
+    font-size: 9px;
+    color: #3D5A6C;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+.mdb-cluster-pill-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: #00ED64;
+    font-family: 'IBM Plex Mono', monospace;
+    margin-top: 3px;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -528,18 +667,48 @@ with st.sidebar:
     if mongo_uri:
         st.success("✅ Connection String configurada")
 
+    # ── Cluster status pill (bottom of sidebar) ────────────────────────────
+    if connected and "all_clusters" in dir() and all_clusters:
+        _tiers  = [c["tier"] for c in all_clusters if c["tier"] not in ["Free/Shared","—"]]
+        _top    = _tiers[0] if _tiers else "Free"
+        _region = all_clusters[0].get("region","—") if all_clusters else "—"
+        st.markdown(f"""
+        <div class="mdb-cluster-pill">
+          <div class="mdb-cluster-pill-label">Cluster Ativo</div>
+          <div class="mdb-cluster-pill-value">{_top} · {_region}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
 
 # ── Guard ─────────────────────────────────────────────────────────────────────
 if not connected:
-    st.markdown('<h1 class="page-title">🎯 Maestro — Atlas Control Plane</h1>', unsafe_allow_html=True)
-    st.markdown("Preencha as credenciais no painel lateral para começar.")
-    with st.expander("ℹ️ Como configurar"):
-        st.markdown("""
-        1. **Atlas API Key:** Organization → Access Manager → API Keys → Create API Key
-        2. Permissão mínima: **Organization Read Only** + **Project Cluster Manager**
-        3. Adicione seu IP na **API Access List**
-        4. *(Opcional)* Connection String para criar índices diretamente
-        """)
+    st.markdown("""
+    <div style="max-width:600px;margin:80px auto 0;text-align:center;">
+      <svg width="52" height="52" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:20px;">
+        <path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>
+      </svg>
+      <div style="font-size:28px;font-weight:800;color:#E3FCF7;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.5px;margin-bottom:8px;">
+        Maestro <span style="color:#00ED64;">Atlas Control Plane</span>
+      </div>
+      <div style="font-size:13px;color:#3D5A6C;font-family:'IBM Plex Mono',monospace;margin-bottom:32px;letter-spacing:0.5px;">
+        PREENCHA AS CREDENCIAIS NO PAINEL LATERAL PARA COMEÇAR
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <div style="background:#002235;border:1px solid rgba(0,237,100,0.15);border-top:2px solid #00ED64;border-radius:0 0 8px 8px;padding:16px 20px;min-width:160px;text-align:left;">
+          <div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.5px;font-family:'Plus Jakarta Sans',sans-serif;margin-bottom:6px;">1 — Atlas API Key</div>
+          <div style="font-size:12px;color:#89979B;font-family:'IBM Plex Mono',monospace;">Org → Access Manager</div>
+        </div>
+        <div style="background:#002235;border:1px solid rgba(56,189,248,0.15);border-top:2px solid #38BDF8;border-radius:0 0 8px 8px;padding:16px 20px;min-width:160px;text-align:left;">
+          <div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.5px;font-family:'Plus Jakarta Sans',sans-serif;margin-bottom:6px;">2 — Anthropic Key</div>
+          <div style="font-size:12px;color:#89979B;font-family:'IBM Plex Mono',monospace;">console.anthropic.com</div>
+        </div>
+        <div style="background:#002235;border:1px solid rgba(0,212,170,0.15);border-top:2px solid #00D4AA;border-radius:0 0 8px 8px;padding:16px 20px;min-width:160px;text-align:left;">
+          <div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.5px;font-family:'Plus Jakarta Sans',sans-serif;margin-bottom:6px;">3 — Connection String</div>
+          <div style="font-size:12px;color:#89979B;font-family:'IBM Plex Mono',monospace;">opcional · para índices</div>
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
     st.stop()
 
 
@@ -726,10 +895,66 @@ def health_gauge_fig(score: int, color: str):
 
 def plotly_dark(fig, height=280):
     fig.update_layout(
-        height=height, plot_bgcolor="#0d1117", paper_bgcolor="#0d1117",
-        font_color="#ccc", margin=dict(t=40, b=20),
+        height=height,
+        plot_bgcolor="#001E2B",
+        paper_bgcolor="#002235",
+        font_color="#89979B",
+        font_family="IBM Plex Mono",
+        margin=dict(t=40, b=20, l=10, r=10),
     )
+    fig.update_xaxes(gridcolor="rgba(255,255,255,0.05)", zerolinecolor="rgba(255,255,255,0.05)")
+    fig.update_yaxes(gridcolor="rgba(255,255,255,0.05)", zerolinecolor="rgba(255,255,255,0.05)")
     return fig
+
+
+# ── UI helper: KPI card row ───────────────────────────────────────────────────
+_KPI_COLORS = {
+    "green":  ("#00ED64",  "rgba(0,237,100,0.10)"),
+    "teal":   ("#00D4AA",  "rgba(0,212,170,0.10)"),
+    "blue":   ("#38BDF8",  "rgba(56,189,248,0.10)"),
+    "yellow": ("#FACC15",  "rgba(250,204,21,0.10)"),
+    "orange": ("#F97316",  "rgba(249,115,22,0.10)"),
+    "red":    ("#F87171",  "rgba(248,113,113,0.10)"),
+    "muted":  ("#89979B",  "rgba(137,151,155,0.06)"),
+}
+
+def mdb_kpi_row(cards: list):
+    """
+    Renders a row of MongoDB-style KPI cards as a single st.markdown() block.
+    cards = [{"label": str, "value": str, "delta": str|None,
+              "color": "green"|"teal"|"blue"|"yellow"|"orange"|"red"|"muted",
+              "delta_type": "up"|"down"|"warn"|"" }]
+    """
+    html = '<div class="mdb-kpi-row">'
+    for card in cards:
+        accent, bg = _KPI_COLORS.get(card.get("color", "green"), _KPI_COLORS["green"])
+        delta_cls  = card.get("delta_type", "")
+        delta_html = (f'<div class="mdb-kpi-delta {delta_cls}">{card["delta"]}</div>'
+                      if card.get("delta") else "")
+        html += (
+            f'<div class="mdb-kpi-card" '
+            f'style="border-top-color:{accent};background:linear-gradient(160deg,{bg} 0%,#002235 100%);">'
+            f'<div class="mdb-kpi-label">{card["label"]}</div>'
+            f'<div class="mdb-kpi-value" style="color:{accent};">{card["value"]}</div>'
+            f'{delta_html}'
+            f'</div>'
+        )
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def mdb_section_header(title: str, badge: str = "", badge_color: str = "green", sub: str = ""):
+    """Renders a styled section header matching the MongoDB dashboard style."""
+    badge_html = (f'<span class="mdb-section-hdr-badge {badge_color}">{badge}</span>'
+                  if badge else "")
+    sub_html   = f'<span class="mdb-section-hdr-sub">{sub}</span>' if sub else ""
+    st.markdown(
+        f'<div class="mdb-section-hdr">'
+        f'<span class="mdb-section-hdr-title">{title}</span>'
+        f'{badge_html}{sub_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -755,25 +980,35 @@ def plotly_dark(fig, height=280):
 # TAB 1 — CLUSTERS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_clusters:
-    st.subheader("Clusters da Organização")
+    mdb_section_header("Clusters da Organização", badge="Live", badge_color="green",
+                       sub=f"atualizado {datetime.now().strftime('%H:%M:%S')}")
     if not all_clusters:
         st.warning("Nenhum cluster encontrado. Verifique as permissões da API Key.")
     else:
         df = pd.DataFrame(all_clusters)
-        dedicated = df[~df["tier"].isin(["Free/Shared"])]
-        top_tier  = dedicated["tier"].value_counts().index[0] if len(dedicated) else "—"
+        dedicated    = df[~df["tier"].isin(["Free/Shared"])]
+        top_tier     = dedicated["tier"].value_counts().index[0] if len(dedicated) else "—"
+        idle_count   = len(df[df["status"] == "IDLE"])
         total_alerts = 0
         for proj_id_a in df["project_id"].unique():
             total_alerts += len(client.get_open_alerts(proj_id_a))
 
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Total Clusters",  len(df))
-        c2.metric("Projetos",        df["project_name"].nunique())
-        c3.metric("Ativos (IDLE)",   len(df[df["status"] == "IDLE"]))
-        c4.metric("Tier + comum",    top_tier)
-        c5.metric("Alertas Abertos", total_alerts,
-                  delta=f"{total_alerts} abertos" if total_alerts > 0 else "nenhum",
-                  delta_color="inverse" if total_alerts > 0 else "off")
+        mdb_kpi_row([
+            {"label": "Total Clusters",  "value": str(len(df)),
+             "delta": f"{df['project_name'].nunique()} projeto(s)", "color": "green"},
+            {"label": "Projetos",        "value": str(df["project_name"].nunique()),
+             "delta": "na organização", "color": "blue"},
+            {"label": "Ativos (IDLE)",   "value": str(idle_count),
+             "delta": "↑ online" if idle_count == len(df) else f"{len(df)-idle_count} offline",
+             "delta_type": "up" if idle_count == len(df) else "warn",
+             "color": "green" if idle_count == len(df) else "yellow"},
+            {"label": "Tier + comum",    "value": top_tier,
+             "delta": "dedicated", "color": "teal"},
+            {"label": "Alertas Abertos", "value": str(total_alerts),
+             "delta": f"↑ {total_alerts} ativos" if total_alerts > 0 else "✓ nenhum",
+             "delta_type": "down" if total_alerts > 0 else "up",
+             "color": "yellow" if total_alerts > 0 else "green"},
+        ])
         st.divider()
 
         _table_rows = []
@@ -813,7 +1048,7 @@ with tab_clusters:
 # TAB 2 — PERFORMANCE ADVISOR
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_pa:
-    st.subheader("⚡ Performance Advisor — Índices Sugeridos")
+    mdb_section_header("Performance Advisor", badge="Índices", badge_color="yellow")
     if not all_clusters:
         st.warning("Nenhum cluster disponível.")
     else:
@@ -904,7 +1139,7 @@ with tab_pa:
 # TAB 3 — QUERY PROFILER
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_profiler:
-    st.subheader("🔍 Query Profiler — Slow Queries")
+    mdb_section_header("Query Profiler", badge="Slow Queries", badge_color="yellow")
     if not all_clusters:
         st.warning("Nenhum cluster disponível.")
     else:
@@ -954,7 +1189,7 @@ with tab_profiler:
 # TAB 4 — SCALE
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_scale:
-    st.subheader("📈 Scale Up / Down")
+    mdb_section_header("Scale", badge="Up / Down", badge_color="teal")
     st.info("O scaling causa um **rolling restart sem downtime**. O Atlas atualiza os nós um a um.")
 
     if not all_clusters:
@@ -965,12 +1200,17 @@ with tab_scale:
         current_tier              = row_sc.get("tier", "N/A")
 
         curr_cost = AtlasClient.estimate_cost(current_tier, usd_brl)
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Cluster",       cluster_name_sc)
-        m2.metric("Tier Atual",    current_tier)
-        m3.metric("Região",        row_sc.get("region", "—"))
-        m4.metric("Custo Est./mês", f"R$ {curr_cost['brl']:,.0f}",
-                  delta=f"≈ USD {curr_cost['usd']:,}", delta_color="off")
+        mdb_kpi_row([
+            {"label": "Cluster",       "value": cluster_name_sc,
+             "delta": row_sc.get("status","—"), "color": "blue"},
+            {"label": "Tier Atual",    "value": current_tier,
+             "delta": "dedicated" if current_tier not in ["Free/Shared"] else "shared",
+             "color": "teal"},
+            {"label": "Região",        "value": row_sc.get("region","—"),
+             "delta": "AWS", "color": "muted"},
+            {"label": "Custo Est./Mês","value": f"R$ {curr_cost['brl']:,.0f}",
+             "delta": f"≈ USD {curr_cost['usd']:,}", "color": "green"},
+        ])
         st.divider()
 
         is_nvme  = "_NVME" in current_tier
@@ -1035,7 +1275,7 @@ with tab_scale:
 # TAB 5 — FINOPS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_finops:
-    st.subheader("💰 FinOps — Estimativa de Custos")
+    mdb_section_header("FinOps", badge="Estimativas", badge_color="green", sub="AWS us-east-1 · 3-node replica set")
     st.caption("Valores estimados com base em AWS us-east-1 · 3-node replica set · referência: atlas.mongodb.com/pricing")
 
     if not all_clusters:
@@ -1056,13 +1296,18 @@ with tab_finops:
         inv_usd  = invoice.get("amountBilledCents", 0) / 100 if invoice else 0
         avg_brl  = total_brl / len(df_cost) if len(df_cost) > 0 else 0
 
-        k1, k2, k3, k4, k5 = st.columns(5)
-        k1.metric("Total est. USD/mês", f"${total_usd:,.0f}")
-        k2.metric("Total est. BRL/mês", f"R$ {total_brl:,.0f}")
-        k3.metric("Média por cluster",  f"R$ {avg_brl:,.0f}")
-        k4.metric("Maior custo",        top_cost)
-        k5.metric("Fatura Atual (USD)", f"${inv_usd:,.2f}",
-                  delta="fatura pendente", delta_color="off")
+        mdb_kpi_row([
+            {"label": "Total Est. USD/Mês", "value": f"${total_usd:,.0f}",
+             "delta": "estimativa AWS us-east-1", "color": "green"},
+            {"label": "Total Est. BRL/Mês", "value": f"R$ {total_brl:,.0f}",
+             "delta": f"cotação R$ {usd_brl:.2f}/USD", "color": "teal"},
+            {"label": "Média por Cluster",  "value": f"R$ {avg_brl:,.0f}",
+             "delta": f"{len(df_cost)} cluster(s)", "color": "blue"},
+            {"label": "Maior Custo",        "value": top_cost,
+             "delta": "cluster mais caro", "color": "yellow"},
+            {"label": "Fatura Atlas (USD)", "value": f"${inv_usd:,.2f}",
+             "delta": "acumulado no período", "color": "orange"},
+        ])
         st.divider()
 
         # Cost table
@@ -1137,7 +1382,7 @@ with tab_finops:
 # TAB 6 — COMPARE
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_compare:
-    st.subheader("📊 Comparar Clusters")
+    mdb_section_header("Comparar Clusters", badge="Side-by-side", badge_color="blue")
 
     if len(all_clusters) < 2:
         st.warning("São necessários pelo menos 2 clusters para comparar.")
@@ -1288,7 +1533,7 @@ with tab_compare:
 # TAB 7 — HEALTH SCORE
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_health:
-    st.subheader("🏥 Health Score por Cluster")
+    mdb_section_header("Health Score", badge="0–100", badge_color="green")
     st.markdown("Análise de saúde baseada em Performance Advisor, Slow Queries, Status e versão do MongoDB.")
 
     if not all_clusters:
@@ -1341,14 +1586,18 @@ with tab_health:
 
             with col_info:
                 st.markdown(f"### `{cluster_name_hs}`")
-                i1, i2, i3 = st.columns(3)
-                i1.metric("Tier",         row_hs.get("tier", "—"))
-                i2.metric("PA Sugestões", n_pa,
-                          delta=f"{n_pa} pendentes" if n_pa > 0 else "nenhuma",
-                          delta_color="inverse" if n_pa > 0 else "off")
-                i3.metric("Slow Queries", n_sq,
-                          delta=f"{n_sq} registradas" if n_sq > 0 else "nenhuma",
-                          delta_color="inverse" if n_sq > 0 else "off")
+                mdb_kpi_row([
+                    {"label": "Tier",         "value": row_hs.get("tier","—"),
+                     "delta": "dedicated", "color": "teal"},
+                    {"label": "PA Sugestões", "value": str(n_pa),
+                     "delta": f"↑ {n_pa} pendentes" if n_pa > 0 else "✓ nenhuma",
+                     "delta_type": "down" if n_pa > 0 else "up",
+                     "color": "yellow" if n_pa > 0 else "green"},
+                    {"label": "Slow Queries", "value": str(n_sq),
+                     "delta": f"↑ {n_sq} registradas" if n_sq > 0 else "✓ nenhuma",
+                     "delta_type": "down" if n_sq > 0 else "up",
+                     "color": "orange" if n_sq > 0 else "green"},
+                ])
                 st.divider()
 
                 if hs["issues"]:
@@ -1412,7 +1661,7 @@ with tab_chat:
         delete_conversation, format_relative_time,
     )
 
-    st.subheader("💬 AI Chat — MongoDB Expert")
+    mdb_section_header("AI Chat", badge="Claude Sonnet 4.6", badge_color="blue")
 
     if not ant_key:
         st.warning("Configure a **Anthropic API Key** na sidebar para usar o AI Chat.")
