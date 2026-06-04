@@ -794,6 +794,56 @@ def get_series_cached(_client: AtlasClient, project_id: str, cluster_name: str) 
     return _client.get_measurements_series(project_id, pid)
 
 
+@st.cache_data(ttl=90, show_spinner=False)
+def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int = 12) -> dict:
+    """
+    Agrega health + métricas vivas de cada cluster para a aba Visão Geral.
+    cluster_keys = tuple de (project_id, cluster_name, status, tier, mongo_version).
+    Cacheado por 90s. Pula clusters pausados. Limitado a max_clusters.
+    """
+    out      = []
+    cpus     = []
+    tot_conn = 0
+    tot_ops  = 0
+    for (pid, cname, status, tier, mver) in cluster_keys[:max_clusters]:
+        n_pa = n_sq = 0
+        cpu = conn = ops = None
+        if status not in ("PAUSED", "DELETING", "CREATING"):
+            try:
+                primary = _client.get_primary(pid, cname)
+                if primary:
+                    try:
+                        n_pa = len(_client.get_suggested_indexes(pid, primary).get("suggestedIndexes", []))
+                        n_sq = len(_client.get_slow_queries(pid, primary).get("slowQueries", []))
+                    except Exception:
+                        pass
+                    meas = _client.get_measurements(pid, primary)
+                    if meas and "error" not in meas:
+                        cpu  = meas.get("cpu_pct", 0)
+                        conn = meas.get("connections", 0)
+                        ops  = (meas.get("ops_query", 0) + meas.get("ops_insert", 0)
+                                + meas.get("ops_update", 0))
+                        cpus.append(cpu); tot_conn += conn; tot_ops += ops
+            except Exception:
+                pass
+        hs = calculate_health_score(status, n_pa, n_sq, mver)
+        out.append({
+            "name": cname, "status": status, "tier": tier, "mver": mver,
+            "n_pa": n_pa, "n_sq": n_sq,
+            "score": hs["score"], "grade": hs["grade"], "color": hs["color"],
+            "cpu": cpu, "conn": conn, "ops": ops,
+        })
+    org_health = round(sum(c["score"] for c in out) / len(out)) if out else 0
+    return {
+        "clusters":      out,
+        "org_health":    org_health,
+        "avg_cpu":       round(sum(cpus) / len(cpus), 1) if cpus else None,
+        "total_conn":    tot_conn,
+        "total_ops":     round(tot_ops, 1),
+        "active_metrics": len(cpus),
+    }
+
+
 with st.spinner("🍃 Conectando ao MongoDB Atlas…"):
     all_clusters, load_error = load_all_clusters(client)
 
@@ -865,6 +915,26 @@ st.divider()
 
 
 # ── Helper functions ──────────────────────────────────────────────────────────
+# ── Região: código Atlas → nome amigável ──────────────────────────────────────
+REGION_NAMES = {
+    "US_EAST_1": "AWS · N. Virginia",    "US_EAST_2": "AWS · Ohio",
+    "US_WEST_1": "AWS · N. California",   "US_WEST_2": "AWS · Oregon",
+    "SA_EAST_1": "AWS · São Paulo",       "EU_WEST_1": "AWS · Ireland",
+    "EU_WEST_2": "AWS · London",          "EU_CENTRAL_1": "AWS · Frankfurt",
+    "AP_SOUTHEAST_1": "AWS · Singapore",  "AP_SOUTHEAST_2": "AWS · Sydney",
+    "AP_SOUTH_1": "AWS · Mumbai",         "AP_NORTHEAST_1": "AWS · Tokyo",
+    "CA_CENTRAL_1": "AWS · Canadá",
+    "EASTERN_US": "GCP · S. Carolina",    "CENTRAL_US": "GCP · Iowa",
+    "WESTERN_EUROPE": "GCP · Bélgica",    "SOUTH_AMERICA_EAST_1": "GCP · São Paulo",
+}
+
+def pretty_region(code: str) -> str:
+    """Converte 'US_EAST_1' → 'AWS · N. Virginia'. Mantém o código se desconhecido."""
+    if not code or code == "—":
+        return "—"
+    return REGION_NAMES.get(code, code.replace("_", " ").title())
+
+
 def project_selector(key_prefix: str):
     project_map = {c["project_name"]: c["project_id"] for c in all_clusters}
     proj_name = st.selectbox("Projeto", list(project_map.keys()), key=f"{key_prefix}_proj")
@@ -1009,10 +1079,11 @@ def mdb_section_header(title: str, badge: str = "", badge_color: str = "green", 
 # TABS
 # ══════════════════════════════════════════════════════════════════════════════
 (
-    tab_clusters, tab_pa, tab_profiler,
+    tab_overview, tab_clusters, tab_pa, tab_profiler,
     tab_scale, tab_finops, tab_compare,
     tab_health, tab_chat,
 ) = st.tabs([
+    "📊 Visão Geral",
     "🏗️ Clusters",
     "⚡ Performance Advisor",
     "🔍 Query Profiler",
@@ -1022,6 +1093,117 @@ def mdb_section_header(title: str, badge: str = "", badge_color: str = "green", 
     "🏥 Health Score",
     "💬 AI Chat",
 ])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 0 — VISÃO GERAL (dashboard executivo, estilo MongoDB Atlas)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_overview:
+    mdb_section_header("Visão Geral", badge="Live", badge_color="green",
+                       sub=f"organização · {datetime.now().strftime('%H:%M:%S')}")
+    if not all_clusters:
+        st.warning("Nenhum cluster encontrado. Verifique as permissões da API Key.")
+    else:
+        _df_ov   = pd.DataFrame(all_clusters)
+        _keys    = tuple(
+            (c["project_id"], c["cluster_name"], c["status"], c["tier"], c["mongo_version"])
+            for c in all_clusters
+        )
+        with st.spinner("🍃 Coletando métricas vivas da frota…"):
+            ov = gather_overview(client, _keys)
+
+        _alerts_ov = count_open_alerts(client, tuple(_df_ov["project_id"].unique()))
+        _cost_brl  = sum(AtlasClient.estimate_cost(c["tier"], usd_brl)["brl"] for c in all_clusters)
+        _idle      = len(_df_ov[_df_ov["status"] == "IDLE"])
+
+        # ── KPI row — números grandes "ao vivo" ──
+        _oh = ov["org_health"]
+        _oh_color = "green" if _oh >= 75 else "yellow" if _oh >= 50 else "red"
+        mdb_kpi_row([
+            {"label": "Clusters Ativos", "value": f"{_idle}/{len(_df_ov)}",
+             "delta": "online" if _idle == len(_df_ov) else f"{len(_df_ov)-_idle} offline",
+             "delta_type": "up" if _idle == len(_df_ov) else "warn",
+             "color": "green" if _idle == len(_df_ov) else "yellow"},
+            {"label": "Health da Org", "value": f"{_oh}%",
+             "delta": "saudável" if _oh >= 75 else "requer atenção",
+             "delta_type": "up" if _oh >= 75 else "warn", "color": _oh_color},
+            {"label": "CPU Média", "value": f"{ov['avg_cpu']}%" if ov["avg_cpu"] is not None else "—",
+             "delta": f"{ov['active_metrics']} cluster(s) medido(s)",
+             "delta_type": "down" if (ov["avg_cpu"] or 0) >= 75 else "",
+             "color": "red" if (ov["avg_cpu"] or 0) >= 75 else "teal"},
+            {"label": "Conexões", "value": f"{ov['total_conn']:,}".replace(",", "."),
+             "delta": "ativas na frota", "color": "blue"},
+            {"label": "Custo/Mês", "value": f"R$ {_cost_brl:,.0f}".replace(",", "."),
+             "delta": f"≈ USD {sum(AtlasClient.estimate_cost(c['tier'], usd_brl)['usd'] for c in all_clusters):,}".replace(",", "."),
+             "color": "green"},
+            {"label": "Alertas", "value": str(_alerts_ov),
+             "delta": "✓ nenhum" if _alerts_ov == 0 else f"↑ {_alerts_ov} abertos",
+             "delta_type": "up" if _alerts_ov == 0 else "down",
+             "color": "green" if _alerts_ov == 0 else "yellow"},
+        ])
+
+        # ── Frota (esquerda) + Carga 24h (direita) ──
+        col_fleet, col_load = st.columns([1, 1])
+
+        with col_fleet:
+            mdb_section_header("Frota de Clusters", badge=f"{len(all_clusters)}", badge_color="blue")
+            for c in ov["clusters"]:
+                dot = {"IDLE": "#00ED64", "PAUSED": "#FACC15"}.get(c["status"], "#38BDF8")
+                grade_c = c["color"]
+                cpu_txt = f"{c['cpu']}% CPU" if c["cpu"] is not None else "métricas n/d"
+                st.markdown(
+                    f'<div style="background:#002235;border:1px solid rgba(255,255,255,0.06);'
+                    f'border-left:3px solid {grade_c};border-radius:6px;padding:12px 16px;margin-bottom:8px;'
+                    f'display:flex;align-items:center;gap:12px;">'
+                    f'<span style="width:8px;height:8px;border-radius:50%;background:{dot};'
+                    f'box-shadow:0 0 8px {dot};flex-shrink:0;"></span>'
+                    f'<div style="flex:1;min-width:0;">'
+                    f'<div style="font-size:13px;font-weight:700;color:#E3FCF7;'
+                    f'font-family:\'IBM Plex Mono\',monospace;">{c["name"]}</div>'
+                    f'<div style="font-size:11px;color:#89979B;margin-top:2px;">'
+                    f'{c["tier"]} · {cpu_txt} · MongoDB {c["mver"]}</div></div>'
+                    f'<div style="text-align:right;flex-shrink:0;">'
+                    f'<div style="font-size:18px;font-weight:800;color:{grade_c};'
+                    f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">{c["grade"]}</div>'
+                    f'<div style="font-size:9px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;">'
+                    f'{c["score"]}/100</div></div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with col_load:
+            # Primeiro cluster ativo para o gráfico de carga
+            _active = next((c for c in all_clusters
+                            if c["status"] not in ("PAUSED", "DELETING", "CREATING")), None)
+            if _active:
+                mdb_section_header("Carga 24h", badge=_active["cluster_name"], badge_color="green")
+                _s = get_series_cached(client, _active["project_id"], _active["cluster_name"])
+                if _s and "error" not in _s and _s.get("timestamps"):
+                    fig_ov = go.Figure()
+                    fig_ov.add_trace(go.Scatter(
+                        x=_s["timestamps"], y=_s["cpu"], name="CPU %", mode="lines",
+                        line=dict(color="#00ED64", width=2), fill="tozeroy",
+                        fillcolor="rgba(0,237,100,0.10)",
+                    ))
+                    fig_ov.add_trace(go.Scatter(
+                        x=_s["timestamps"], y=_s["ops_query"], name="Queries/s", mode="lines",
+                        line=dict(color="#38BDF8", width=2), yaxis="y2",
+                    ))
+                    fig_ov.update_layout(
+                        height=320, plot_bgcolor="#001E2B", paper_bgcolor="#002235",
+                        font_color="#89979B", font_family="IBM Plex Mono",
+                        margin=dict(t=30, b=20, l=10, r=10),
+                        legend=dict(orientation="h", y=1.14, bgcolor="rgba(0,0,0,0)"),
+                        yaxis=dict(title="CPU %", gridcolor="rgba(255,255,255,0.05)"),
+                        yaxis2=dict(title="ops/s", overlaying="y", side="right", showgrid=False),
+                        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                    )
+                    show_chart(fig_ov)
+                else:
+                    st.caption("Sem dados históricos disponíveis para este cluster.")
+            else:
+                mdb_section_header("Carga 24h", badge="—", badge_color="yellow")
+                st.caption("Nenhum cluster ativo para exibir métricas.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1039,21 +1221,19 @@ with tab_clusters:
         idle_count   = len(df[df["status"] == "IDLE"])
         total_alerts = count_open_alerts(client, tuple(df["project_id"].unique()))
 
+        _n_dedic = len(dedicated)
         mdb_kpi_row([
-            {"label": "Total Clusters",  "value": str(len(df)),
-             "delta": f"{df['project_name'].nunique()} projeto(s)", "color": "green"},
-            {"label": "Projetos",        "value": str(df["project_name"].nunique()),
-             "delta": "na organização", "color": "blue"},
-            {"label": "Ativos (IDLE)",   "value": str(idle_count),
-             "delta": "↑ online" if idle_count == len(df) else f"{len(df)-idle_count} offline",
+            {"label": "Total Clusters",  "value": str(len(df)), "color": "green"},
+            {"label": "Projetos",        "value": str(df["project_name"].nunique()), "color": "blue"},
+            {"label": "Ativos (IDLE)",   "value": f"{idle_count}/{len(df)}",
+             "delta": "todos online" if idle_count == len(df) else f"{len(df)-idle_count} offline",
              "delta_type": "up" if idle_count == len(df) else "warn",
              "color": "green" if idle_count == len(df) else "yellow"},
-            {"label": "Tier + comum",    "value": top_tier,
-             "delta": "dedicated", "color": "teal"},
+            {"label": "Tier + comum",    "value": top_tier, "color": "teal"},
             {"label": "Alertas Abertos", "value": str(total_alerts),
-             "delta": f"↑ {total_alerts} ativos" if total_alerts > 0 else "✓ nenhum",
-             "delta_type": "down" if total_alerts > 0 else "up",
-             "color": "yellow" if total_alerts > 0 else "green"},
+             "delta": "✓ nenhum" if total_alerts == 0 else f"↑ {total_alerts} ativos",
+             "delta_type": "up" if total_alerts == 0 else "down",
+             "color": "green" if total_alerts == 0 else "yellow"},
         ])
         st.divider()
 
@@ -1064,7 +1244,7 @@ with tab_clusters:
                 "projeto": _c["project_name"],
                 "cluster": _c["cluster_name"],
                 "tier":    _c["tier"],
-                "regiao":  _c["region"],
+                "regiao":  pretty_region(_c["region"]),
                 "status":  _c["status"],
                 "mongodb": _c["mongo_version"],
                 "tipo":    _c["cluster_type"],
@@ -1073,7 +1253,8 @@ with tab_clusters:
             })
         maestro_cluster_table(_table_rows)
 
-        if len(dedicated) > 0:
+        # Gráficos só fazem sentido com variedade — escondidos em frota pequena
+        if _n_dedic >= 3:
             st.divider()
             col_c1, col_c2 = st.columns(2)
             with col_c1:
@@ -1211,23 +1392,66 @@ with tab_profiler:
                 st.success(f"✅ Nenhuma slow query em **{cluster_name_qp}**.")
             else:
                 st.warning(f"⚠️ **{len(sq_list)}** slow quer{'y' if len(sq_list) == 1 else 'ies'} registradas")
+
+                # Mapa de plano → rótulo legível + flag de gravidade
+                _PLAN_LABEL = {
+                    "COLLSCAN":   ("🔴 COLLSCAN", "Varredura completa — sem índice"),
+                    "IXSCAN":     ("🟢 IXSCAN", "Usou índice"),
+                    "FETCH":      ("🟡 FETCH", "Buscou documentos"),
+                    "SORT":       ("🟠 SORT", "Ordenação em memória"),
+                    "IDHACK":     ("🟢 IDHACK", "Lookup por _id"),
+                }
                 rows = []
                 for q in sq_list:
                     line = q.get("line", "")
+                    attr = {}
                     try:
-                        dur = json.loads(line or "{}").get("attr", {}).get("durationMillis", q.get("duration", 0))
+                        attr = json.loads(line or "{}").get("attr", {})
                     except Exception:
-                        dur = q.get("duration", 0)
+                        pass
+                    dur      = attr.get("durationMillis", q.get("duration", 0))
+                    op_type  = attr.get("type", attr.get("command", {}).get("find", "") and "query" or "—")
+                    plan     = attr.get("planSummary", "—")
+                    docs_ex  = attr.get("docsExamined", attr.get("keysExamined", "—"))
+                    n_ret    = attr.get("nreturned", attr.get("nReturned", "—"))
+                    # Rótulo do plano (pega o 1º termo conhecido)
+                    plan_lbl = plan
+                    for key, (lbl, _desc) in _PLAN_LABEL.items():
+                        if key in str(plan):
+                            plan_lbl = lbl
+                            break
                     rows.append({
-                        "Namespace":     q.get("namespace", "N/A"),
-                        "Duration (ms)": dur,
-                        "Log":           (line[:130] + "…") if len(line) > 130 else line,
+                        "Namespace": q.get("namespace", "N/A"),
+                        "Plano":     plan_lbl,
+                        "Duração":   dur,
+                        "Docs Examinados": docs_ex,
+                        "Retornados":      n_ret,
                     })
-                df_sq = pd.DataFrame(rows).sort_values("Duration (ms)", ascending=False).reset_index(drop=True)
-                st.dataframe(df_sq, use_container_width=True, hide_index=True)
+                df_sq = pd.DataFrame(rows).sort_values("Duração", ascending=False).reset_index(drop=True)
+
+                # KPIs rápidos das slow queries
+                _collscans = sum(1 for r in rows if "COLLSCAN" in str(r["Plano"]))
+                _worst     = df_sq["Duração"].max() if len(df_sq) else 0
+                _avg       = round(df_sq["Duração"].mean()) if len(df_sq) else 0
+                mdb_kpi_row([
+                    {"label": "Slow Queries", "value": str(len(sq_list)), "color": "yellow"},
+                    {"label": "COLLSCANs", "value": str(_collscans),
+                     "delta": "sem índice" if _collscans else "✓ nenhum",
+                     "delta_type": "down" if _collscans else "up",
+                     "color": "red" if _collscans else "green"},
+                    {"label": "Pior Latência", "value": f"{_worst:,}ms".replace(",", "."), "color": "orange"},
+                    {"label": "Latência Média", "value": f"{_avg:,}ms".replace(",", "."), "color": "teal"},
+                ])
+
+                df_sq_display = df_sq.copy()
+                df_sq_display["Duração"] = df_sq_display["Duração"].apply(lambda x: f"{x:,}ms".replace(",", "."))
+                st.dataframe(df_sq_display, use_container_width=True, hide_index=True)
+                if _collscans:
+                    st.caption("💡 Queries com **🔴 COLLSCAN** varrem a collection inteira — "
+                               "veja a aba **Performance Advisor** para os índices recomendados.")
                 if len(df_sq) >= 3:
-                    fig = px.histogram(df_sq, x="Duration (ms)", nbins=20,
-                                       title="Distribuição de Latência", color_discrete_sequence=["#00ED64"])
+                    fig = px.histogram(df_sq, x="Duração", nbins=20,
+                                       title="Distribuição de Latência (ms)", color_discrete_sequence=["#00ED64"])
                     show_chart(plotly_dark(fig))
 
 
@@ -1252,8 +1476,8 @@ with tab_scale:
             {"label": "Tier Atual",    "value": current_tier,
              "delta": "dedicated" if current_tier not in ["Free/Shared"] else "shared",
              "color": "teal"},
-            {"label": "Região",        "value": row_sc.get("region","—"),
-             "delta": "AWS", "color": "muted"},
+            {"label": "Região",        "value": pretty_region(row_sc.get("region","—")),
+             "color": "muted"},
             {"label": "Custo Est./Mês","value": f"R$ {curr_cost['brl']:,.0f}",
              "delta": f"≈ USD {curr_cost['usd']:,}", "color": "green"},
         ])
@@ -1410,6 +1634,7 @@ with tab_finops:
 
         # Cost table
         df_display_fin = df_cost[["project_name","cluster_name","tier","region","USD/mês","BRL/mês"]].copy()
+        df_display_fin["region"] = df_display_fin["region"].apply(pretty_region)
         df_display_fin = df_display_fin.rename(columns={
             "project_name": "Projeto", "cluster_name": "Cluster",
             "tier": "Tier", "region": "Região",
@@ -1521,7 +1746,7 @@ with tab_compare:
                     return {
                         "Label":        display_name,
                         "Tier":         row.get("tier", "—"),
-                        "Região":       row.get("region", "—"),
+                        "Região":       pretty_region(row.get("region", "—")),
                         "Status":       STATUS_ICON.get(status, f"⚪ {status}"),
                         "MongoDB":      row.get("mongo_version", "—"),
                         "PA Sugestões": n_pa,
