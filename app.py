@@ -801,6 +801,13 @@ def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int
     cluster_keys = tuple de (project_id, cluster_name, status, tier, mongo_version).
     Cacheado por 90s. Pula clusters pausados. Limitado a max_clusters.
     """
+    def _last_nonnull(lst):
+        """Último valor não-nulo de uma série (ignora 0 só se quiser; aqui aceita 0)."""
+        for v in reversed(lst or []):
+            if v is not None:
+                return v
+        return None
+
     out      = []
     cpus     = []
     tot_conn = 0
@@ -817,13 +824,20 @@ def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int
                         n_sq = len(_client.get_slow_queries(pid, primary).get("slowQueries", []))
                     except Exception:
                         pass
-                    meas = _client.get_measurements(pid, primary)
-                    if meas and "error" not in meas:
-                        cpu  = meas.get("cpu_pct", 0)
-                        conn = meas.get("connections", 0)
-                        ops  = (meas.get("ops_query", 0) + meas.get("ops_insert", 0)
-                                + meas.get("ops_update", 0))
-                        cpus.append(cpu); tot_conn += conn; tot_ops += ops
+                    # Usa a MESMA série de 24h do gráfico (mais confiável que o ponto-a-ponto)
+                    series = _client.get_measurements_series(pid, primary)
+                    if series and "error" not in series:
+                        cpu  = _last_nonnull(series.get("cpu"))
+                        conn = _last_nonnull(series.get("connections"))
+                        oq   = _last_nonnull(series.get("ops_query"))  or 0
+                        oi   = _last_nonnull(series.get("ops_insert")) or 0
+                        ou   = _last_nonnull(series.get("ops_update")) or 0
+                        ops  = round(oq + oi + ou, 1)
+                        if cpu is not None:
+                            cpus.append(cpu)
+                        if conn is not None:
+                            tot_conn += conn
+                        tot_ops += ops
             except Exception:
                 pass
         hs = calculate_health_score(status, n_pa, n_sq, mver)
@@ -838,8 +852,8 @@ def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int
         "clusters":      out,
         "org_health":    org_health,
         "avg_cpu":       round(sum(cpus) / len(cpus), 1) if cpus else None,
-        "total_conn":    tot_conn,
-        "total_ops":     round(tot_ops, 1),
+        "total_conn":    tot_conn if cpus else None,   # None se nenhuma métrica disponível
+        "total_ops":     round(tot_ops, 1) if cpus else None,
         "active_metrics": len(cpus),
     }
 
@@ -1128,11 +1142,11 @@ with tab_overview:
              "delta": "saudável" if _oh >= 75 else "requer atenção",
              "delta_type": "up" if _oh >= 75 else "warn", "color": _oh_color},
             {"label": "CPU Média", "value": f"{ov['avg_cpu']}%" if ov["avg_cpu"] is not None else "—",
-             "delta": f"{ov['active_metrics']} cluster(s) medido(s)",
              "delta_type": "down" if (ov["avg_cpu"] or 0) >= 75 else "",
              "color": "red" if (ov["avg_cpu"] or 0) >= 75 else "teal"},
-            {"label": "Conexões", "value": f"{ov['total_conn']:,}".replace(",", "."),
-             "delta": "ativas na frota", "color": "blue"},
+            {"label": "Conexões",
+             "value": f"{ov['total_conn']:,}".replace(",", ".") if ov["total_conn"] is not None else "—",
+             "color": "blue"},
             {"label": "Custo/Mês", "value": f"R$ {_cost_brl:,.0f}".replace(",", "."),
              "delta": f"≈ USD {sum(AtlasClient.estimate_cost(c['tier'], usd_brl)['usd'] for c in all_clusters):,}".replace(",", "."),
              "color": "green"},
