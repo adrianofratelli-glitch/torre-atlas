@@ -10,9 +10,9 @@ if [ -f .env ]; then
 fi
 
 # Instala dependências se necessário
-if ! python -c "import fpdf" 2>/dev/null; then
+if ! python -c "import fpdf, streamlit_autorefresh" 2>/dev/null; then
     echo "📦 Instalando dependências novas…"
-    pip install -q fpdf2 pymongo
+    pip install -q fpdf2 pymongo streamlit-autorefresh
 fi
 
 echo "🎯 Iniciando Maestro v2.0 na porta 8502…"

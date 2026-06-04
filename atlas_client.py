@@ -214,6 +214,121 @@ class AtlasClient:
         formatted["_raw"]             = result
         return formatted
 
+    # ── Hardware Measurements (time series) ───────────────────────────────
+    def get_measurements_series(self, project_id: str, process_id: str,
+                                period: str = "P1D", granularity: str = "PT1H") -> dict:
+        """
+        Busca série temporal de métricas para gráficos (default: últimas 24h, 1 ponto/h).
+        Retorna estrutura pronta para plotar: timestamps + séries alinhadas.
+        """
+        METRICS = [
+            "SYSTEM_CPU_USER", "SYSTEM_CPU_KERNEL",
+            "OPCOUNTER_QUERY", "OPCOUNTER_INSERT", "OPCOUNTER_UPDATE",
+            "CONNECTIONS",
+        ]
+        try:
+            data = self._get(
+                f"/groups/{project_id}/processes/{process_id}/measurements",
+                params={"granularity": granularity, "period": period, "m": METRICS},
+            )
+        except Exception as e:
+            return {"error": str(e)}
+
+        raw = {}
+        timestamps = []
+        for m in data.get("measurements", []):
+            name = m.get("name", "")
+            pts  = m.get("dataPoints", [])
+            raw[name] = [p.get("value") for p in pts]
+            if not timestamps and pts:
+                timestamps = [p.get("timestamp") for p in pts]
+
+        def _combine(a, b):
+            la, lb = raw.get(a, []), raw.get(b, [])
+            n = max(len(la), len(lb))
+            out = []
+            for i in range(n):
+                va = la[i] if i < len(la) and la[i] is not None else 0
+                vb = lb[i] if i < len(lb) and lb[i] is not None else 0
+                out.append(round(va + vb, 1))
+            return out
+
+        def _clean(name):
+            return [round(v, 1) if v is not None else 0 for v in raw.get(name, [])]
+
+        return {
+            "timestamps":  timestamps,
+            "cpu":         _combine("SYSTEM_CPU_USER", "SYSTEM_CPU_KERNEL"),
+            "ops_query":   _clean("OPCOUNTER_QUERY"),
+            "ops_insert":  _clean("OPCOUNTER_INSERT"),
+            "ops_update":  _clean("OPCOUNTER_UPDATE"),
+            "connections": _clean("CONNECTIONS"),
+        }
+
+    # ── Scaling recommendation (heuristic, based on real metrics) ─────────
+    # Limite aproximado de conexões por tier (Atlas docs)
+    TIER_CONN_LIMIT = {
+        "M10": 1500, "M20": 3000, "M30": 3000, "M40": 6000, "M50": 16000,
+        "M60": 32000, "M80": 64000, "M140": 96000, "M200": 128000,
+        "M300": 128000, "M400": 128000, "M700": 128000,
+        "M40_NVME": 6000, "M50_NVME": 16000, "M60_NVME": 32000,
+        "M80_NVME": 64000, "M200_NVME": 128000, "M400_NVME": 128000,
+    }
+
+    @staticmethod
+    def recommend_scaling(measurements: dict, tier: str) -> dict:
+        """
+        Recomenda scaling com base nas métricas reais de hardware.
+        Retorna {"action": "up"|"down"|"ok", "severity": "high"|"med"|"low",
+                 "reasons": [str], "headline": str}.
+        """
+        if not measurements or "error" in measurements:
+            return {"action": "ok", "severity": "low", "reasons": [], "headline": ""}
+
+        cpu   = measurements.get("cpu_pct", 0)
+        conns = measurements.get("connections", 0)
+        iops  = measurements.get("disk_iops_read", 0) + measurements.get("disk_iops_write", 0)
+        conn_limit = AtlasClient.TIER_CONN_LIMIT.get(tier, 1500)
+        conn_pct   = (conns / conn_limit * 100) if conn_limit else 0
+
+        reasons, action, severity = [], "ok", "low"
+
+        if cpu >= 80:
+            action, severity = "up", "high"
+            reasons.append(f"CPU em **{cpu}%** — acima de 80%, gargalo de processamento")
+        elif cpu >= 65:
+            action, severity = "up", "med"
+            reasons.append(f"CPU em **{cpu}%** — aproximando do limite (65%+)")
+
+        if conn_pct >= 80:
+            action, severity = "up", "high"
+            reasons.append(f"Conexões em **{conns}** ({conn_pct:.0f}% do limite do {tier})")
+        elif conn_pct >= 60:
+            if action != "up":
+                action, severity = "up", "med"
+            reasons.append(f"Conexões em **{conns}** ({conn_pct:.0f}% do limite do {tier})")
+
+        if iops >= 3000 and "_NVME" not in tier:
+            if action != "up":
+                action, severity = "up", "med"
+            reasons.append(f"Disco em **{iops:.0f} IOPS** — avalie tier NVMe para I/O intensivo")
+
+        # Scale DOWN: subutilização clara
+        if action == "ok" and cpu < 15 and conn_pct < 20 and tier != "M10":
+            action, severity = "down", "low"
+            reasons.append(f"CPU em **{cpu}%** e conexões baixas — possível economia de custo")
+
+        headlines = {
+            "up":   "⬆️ Recomendação: Scale UP",
+            "down": "⬇️ Oportunidade: Scale DOWN (economia)",
+            "ok":   "✅ Tier adequado para a carga atual",
+        }
+        if action == "ok" and not reasons:
+            reasons.append(f"CPU em **{cpu}%**, conexões saudáveis — nenhuma ação necessária")
+
+        return {"action": action, "severity": severity,
+                "reasons": reasons, "headline": headlines[action]}
+
     # ── Performance Advisor ───────────────────────────────────────────────
     def get_suggested_indexes(self, project_id, process_id):
         return self._get(

@@ -179,34 +179,130 @@ def stream_chat(messages: list, system_prompt: str = "") -> Iterator[str]:
 # PDF EXPORT
 # ══════════════════════════════════════════════════════════════════════════════
 
-def generate_pdf_report(
-    cluster_name: str,
-    analysis_text: str,
-    health_score: int = None,
-    health_issues: list = None,
-) -> bytes:
-    """
-    Gera um relatório Markdown (.md) pronto para download.
-    Markdown é mais confiável que PDF para conteúdo técnico com
-    nomes de campos longos, hashes e blocos de código MongoDB.
-    """
+def _markdown_report(cluster_name, analysis_text, health_score, health_issues) -> bytes:
+    """Fallback: relatório em Markdown puro."""
     from datetime import datetime
-
     lines = [
-        f"# Maestro — Atlas Report",
+        "# Maestro — Atlas Report",
         f"**Cluster:** `{cluster_name}`  ",
         f"**Data:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
         "",
     ]
-
     if health_score is not None:
         lines += [f"## Health Score: {health_score}/100", ""]
         if health_issues:
             for issue in health_issues:
                 lines.append(f"- {issue}")
             lines.append("")
-
     lines += ["---", "", analysis_text]
+    return "\n".join(lines).encode("utf-8")
 
-    content = "\n".join(lines)
-    return content.encode("utf-8")
+
+def generate_pdf_report(
+    cluster_name: str,
+    analysis_text: str,
+    health_score: int = None,
+    health_issues: list = None,
+) -> tuple:
+    """
+    Gera um relatório PDF real (via fpdf2) com branding MongoDB.
+    Retorna (bytes, mime, extensão). Faz fallback para Markdown se fpdf2 falhar.
+    """
+    from datetime import datetime
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return _markdown_report(cluster_name, analysis_text, health_score, health_issues), "text/markdown", "md"
+
+    # Sanitiza para Latin-1 (fpdf2 core fonts não suportam todos os emojis/unicode)
+    def _safe(s: str) -> str:
+        return (s or "").encode("latin-1", "replace").decode("latin-1")
+
+    try:
+        pdf = FPDF()
+        pdf.set_auto_page_break(auto=True, margin=18)
+        pdf.add_page()
+
+        # ── Header faixa MongoDB ──
+        pdf.set_fill_color(0, 30, 43)        # #001E2B
+        pdf.rect(0, 0, 210, 28, "F")
+        pdf.set_fill_color(0, 237, 100)      # #00ED64
+        pdf.rect(0, 28, 210, 1.2, "F")
+        pdf.set_xy(14, 9)
+        pdf.set_text_color(0, 237, 100)
+        pdf.set_font("Helvetica", "B", 18)
+        pdf.cell(0, 8, "Maestro", ln=False)
+        pdf.set_text_color(227, 252, 247)
+        pdf.set_font("Helvetica", "", 18)
+        pdf.cell(0, 8, "  Atlas Control Plane", ln=True)
+
+        # ── Metadata ──
+        pdf.set_xy(14, 38)
+        pdf.set_text_color(90, 110, 120)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 6, _safe(f"Cluster: {cluster_name}"), ln=True)
+        pdf.set_x(14)
+        pdf.cell(0, 6, _safe(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), ln=True)
+        pdf.ln(4)
+
+        # ── Health Score box (se houver) ──
+        if health_score is not None:
+            color = (0, 237, 100) if health_score >= 75 else (250, 204, 21) if health_score >= 50 else (248, 113, 113)
+            pdf.set_x(14)
+            pdf.set_fill_color(*color)
+            pdf.set_text_color(0, 30, 43)
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.cell(60, 10, _safe(f"  Health Score: {health_score}/100"), ln=True, fill=True)
+            pdf.ln(2)
+            if health_issues:
+                pdf.set_text_color(80, 80, 80)
+                pdf.set_font("Helvetica", "", 9)
+                for issue in health_issues:
+                    clean = _safe(issue.replace("**", ""))
+                    pdf.set_x(14)
+                    pdf.multi_cell(180, 5, f"- {clean}")
+                pdf.ln(2)
+
+        # ── Corpo da análise ──
+        pdf.set_text_color(40, 40, 40)
+        pdf.set_font("Helvetica", "", 10)
+        for raw_line in analysis_text.split("\n"):
+            line = _safe(raw_line.replace("**", "").replace("`", ""))
+            pdf.set_x(14)
+            if raw_line.startswith("### "):
+                pdf.ln(1); pdf.set_font("Helvetica", "B", 11)
+                pdf.multi_cell(182, 6, line.replace("### ", ""))
+                pdf.set_font("Helvetica", "", 10)
+            elif raw_line.startswith("## "):
+                pdf.ln(2); pdf.set_font("Helvetica", "B", 13)
+                pdf.set_text_color(0, 120, 70)
+                pdf.multi_cell(182, 7, line.replace("## ", ""))
+                pdf.set_text_color(40, 40, 40); pdf.set_font("Helvetica", "", 10)
+            elif line.strip():
+                pdf.multi_cell(182, 5, line)
+            else:
+                pdf.ln(2)
+
+        out = pdf.output(dest="S")
+        pdf_bytes = bytes(out) if isinstance(out, (bytes, bytearray)) else out.encode("latin-1")
+        return pdf_bytes, "application/pdf", "pdf"
+    except Exception:
+        return _markdown_report(cluster_name, analysis_text, health_score, health_issues), "text/markdown", "md"
+
+
+def friendly_api_error(err: Exception) -> str:
+    """Converte exceções da API Anthropic em mensagens amigáveis para a demo."""
+    msg = str(err).lower()
+    if "authentication" in msg or "401" in msg or "invalid x-api-key" in msg or "api_key" in msg:
+        return ("🔑 **API Key da Anthropic inválida ou expirada.** "
+                "Verifique a chave no painel lateral (deve começar com `sk-ant-`).")
+    if "rate" in msg or "429" in msg or "overloaded" in msg:
+        return ("⏳ **Limite de requisições atingido.** "
+                "Aguarde alguns segundos e tente novamente.")
+    if "connection" in msg or "timeout" in msg or "network" in msg:
+        return ("🌐 **Falha de conexão com a Anthropic.** "
+                "Verifique sua internet e tente novamente.")
+    if "credit" in msg or "billing" in msg or "quota" in msg:
+        return ("💳 **Créditos da conta Anthropic esgotados.** "
+                "Verifique o billing em console.anthropic.com.")
+    return f"❌ **Erro ao chamar Claude:** {err}"

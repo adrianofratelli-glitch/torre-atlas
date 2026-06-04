@@ -19,6 +19,7 @@ from ai_agent import (
     stream_chat,
     build_chat_system_prompt,
     generate_pdf_report,
+    friendly_api_error,
 )
 from streamlit_maestro_theme import maestro_cluster_table
 
@@ -473,12 +474,14 @@ hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
    ══════════════════════════════════════════════════════════════════════════ */
 .mdb-kpi-row {
     display: flex;
+    flex-wrap: wrap;
     gap: 14px;
     margin: 20px 0 28px;
     width: 100%;
 }
 .mdb-kpi-card {
-    flex: 1;
+    flex: 1 1 150px;
+    min-width: 150px;
     background: var(--card2);
     border: 1px solid rgba(255,255,255,0.06);
     border-top: 3px solid var(--green);
@@ -761,21 +764,58 @@ def load_all_clusters(_client: AtlasClient):
     return rows, None
 
 
-with st.spinner("Carregando clusters…"):
+@st.cache_data(ttl=30, show_spinner=False)
+def count_open_alerts(_client: AtlasClient, project_ids: tuple) -> int:
+    """Soma de alertas abertos em todos os projetos. Cacheado por 30s."""
+    total = 0
+    for pid in project_ids:
+        try:
+            total += len(_client.get_open_alerts(pid))
+        except Exception:
+            pass
+    return total
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def get_measurements_cached(_client: AtlasClient, project_id: str, cluster_name: str) -> dict:
+    """Métricas pontuais do primário, cacheadas por 60s."""
+    pid = _client.get_primary(project_id, cluster_name)
+    if not pid:
+        return {}
+    return _client.get_measurements(project_id, pid)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def get_series_cached(_client: AtlasClient, project_id: str, cluster_name: str) -> dict:
+    """Série temporal 24h do primário, cacheada por 5min."""
+    pid = _client.get_primary(project_id, cluster_name)
+    if not pid:
+        return {"error": "no primary"}
+    return _client.get_measurements_series(project_id, pid)
+
+
+with st.spinner("🍃 Conectando ao MongoDB Atlas…"):
     all_clusters, load_error = load_all_clusters(client)
 
 
-# ── Auto-refresh ──────────────────────────────────────────────────────────────
+# ── Auto-refresh real (sem precisar de interação) ──────────────────────────────
 REFRESH_INTERVALS = {"30s": 30, "60s": 60, "120s": 120}
 if refresh_opt != "Off":
     interval = REFRESH_INTERVALS[refresh_opt]
-    now = time.time()
-    if "last_refresh" not in st.session_state:
-        st.session_state["last_refresh"] = now
-    elif now - st.session_state["last_refresh"] >= interval:
-        st.session_state["last_refresh"] = now
-        st.cache_data.clear()
-        st.rerun()
+    try:
+        from streamlit_autorefresh import st_autorefresh
+        _count = st_autorefresh(interval=interval * 1000, key="auto_refresh_timer")
+        if _count and _count != st.session_state.get("_last_autorefresh_count"):
+            st.session_state["_last_autorefresh_count"] = _count
+            st.cache_data.clear()
+    except ImportError:
+        now = time.time()
+        if "last_refresh" not in st.session_state:
+            st.session_state["last_refresh"] = now
+        elif now - st.session_state["last_refresh"] >= interval:
+            st.session_state["last_refresh"] = now
+            st.cache_data.clear()
+            st.rerun()
 
 
 # ── Page header ───────────────────────────────────────────────────────────────
@@ -907,6 +947,14 @@ def plotly_dark(fig, height=280):
     return fig
 
 
+# Config global do Plotly — esconde a toolbar para visual mais limpo na demo
+PLOTLY_CONFIG = {"displayModeBar": False, "responsive": True}
+
+def show_chart(fig, **kwargs):
+    """Renderiza um gráfico Plotly com a config limpa padrão."""
+    st.plotly_chart(fig, use_container_width=True, config=PLOTLY_CONFIG, **kwargs)
+
+
 # ── UI helper: KPI card row ───────────────────────────────────────────────────
 _KPI_COLORS = {
     "green":  ("#00ED64",  "rgba(0,237,100,0.10)"),
@@ -989,9 +1037,7 @@ with tab_clusters:
         dedicated    = df[~df["tier"].isin(["Free/Shared"])]
         top_tier     = dedicated["tier"].value_counts().index[0] if len(dedicated) else "—"
         idle_count   = len(df[df["status"] == "IDLE"])
-        total_alerts = 0
-        for proj_id_a in df["project_id"].unique():
-            total_alerts += len(client.get_open_alerts(proj_id_a))
+        total_alerts = count_open_alerts(client, tuple(df["project_id"].unique()))
 
         mdb_kpi_row([
             {"label": "Total Clusters",  "value": str(len(df)),
@@ -1035,13 +1081,13 @@ with tab_clusters:
                 tier_counts = dedicated["tier"].value_counts()
                 fig = px.bar(x=tier_counts.index, y=tier_counts.values,
                              labels={"x":"Tier","y":"Clusters"}, color_discrete_sequence=["#00ED64"])
-                st.plotly_chart(plotly_dark(fig), use_container_width=True)
+                show_chart(plotly_dark(fig))
             with col_c2:
                 st.markdown("**Clusters por Projeto**")
                 proj_counts = df["project_name"].value_counts()
                 fig2 = px.pie(names=proj_counts.index, values=proj_counts.values,
                               hole=0.4, color_discrete_sequence=px.colors.sequential.Greens_r)
-                st.plotly_chart(plotly_dark(fig2), use_container_width=True)
+                show_chart(plotly_dark(fig2))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1132,7 +1178,7 @@ with tab_pa:
                                     holder.markdown(text + "▌")
                                 holder.markdown(text)
                         except Exception as e:
-                            st.error(f"Erro na análise AI: {e}")
+                            st.error(friendly_api_error(e))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1182,7 +1228,7 @@ with tab_profiler:
                 if len(df_sq) >= 3:
                     fig = px.histogram(df_sq, x="Duration (ms)", nbins=20,
                                        title="Distribuição de Latência", color_discrete_sequence=["#00ED64"])
-                    st.plotly_chart(plotly_dark(fig), use_container_width=True)
+                    show_chart(plotly_dark(fig))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1211,6 +1257,58 @@ with tab_scale:
             {"label": "Custo Est./Mês","value": f"R$ {curr_cost['brl']:,.0f}",
              "delta": f"≈ USD {curr_cost['usd']:,}", "color": "green"},
         ])
+
+        # ── Recomendação inteligente de scaling (baseada em métricas reais) ──
+        if row_sc.get("status") not in ("PAUSED", "DELETING", "CREATING"):
+            with st.spinner("Analisando métricas do cluster…"):
+                _meas_sc = get_measurements_cached(client, proj_id_sc, cluster_name_sc)
+            rec = AtlasClient.recommend_scaling(_meas_sc, current_tier)
+            if rec["headline"]:
+                sev_color = {"high": "#F87171", "med": "#FACC15", "low": "#00ED64"}[rec["severity"]]
+                act_bg    = {"up": "rgba(248,113,113,0.07)", "down": "rgba(56,189,248,0.07)",
+                             "ok": "rgba(0,237,100,0.06)"}[rec["action"]]
+                reasons_html = "".join(
+                    f'<li style="margin:3px 0;color:#89979B;font-size:12px;">{r.replace("**","")}</li>'
+                    for r in rec["reasons"]
+                )
+                st.markdown(
+                    f'<div style="background:{act_bg};border:1px solid {sev_color}33;'
+                    f'border-left:3px solid {sev_color};border-radius:8px;padding:14px 18px;margin:8px 0 4px;">'
+                    f'<div style="font-size:14px;font-weight:700;color:{sev_color};'
+                    f'font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:6px;">{rec["headline"]}</div>'
+                    f'<ul style="margin:0;padding-left:18px;">{reasons_html}</ul></div>',
+                    unsafe_allow_html=True,
+                )
+
+            # ── Gráfico histórico de carga (últimas 24h) ──
+            with st.expander("📈 Carga das últimas 24h (CPU · Operações)", expanded=False):
+                _series = get_series_cached(client, proj_id_sc, cluster_name_sc)
+                if _series and "error" not in _series and _series.get("timestamps"):
+                    import plotly.graph_objects as _go
+                    ts = _series["timestamps"]
+                    fig_hist = _go.Figure()
+                    fig_hist.add_trace(_go.Scatter(
+                        x=ts, y=_series["cpu"], name="CPU %", mode="lines",
+                        line=dict(color="#00ED64", width=2), fill="tozeroy",
+                        fillcolor="rgba(0,237,100,0.08)",
+                    ))
+                    fig_hist.add_trace(_go.Scatter(
+                        x=ts, y=_series["ops_query"], name="Queries/s", mode="lines",
+                        line=dict(color="#38BDF8", width=2), yaxis="y2",
+                    ))
+                    fig_hist.update_layout(
+                        height=300, plot_bgcolor="#001E2B", paper_bgcolor="#002235",
+                        font_color="#89979B", font_family="IBM Plex Mono",
+                        margin=dict(t=30, b=20, l=10, r=10),
+                        legend=dict(orientation="h", y=1.12, bgcolor="rgba(0,0,0,0)"),
+                        yaxis=dict(title="CPU %", gridcolor="rgba(255,255,255,0.05)"),
+                        yaxis2=dict(title="ops/s", overlaying="y", side="right", showgrid=False),
+                        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+                    )
+                    show_chart(fig_hist)
+                else:
+                    st.caption("Sem dados históricos disponíveis para este cluster.")
+
         st.divider()
 
         is_nvme  = "_NVME" in current_tier
@@ -1332,7 +1430,7 @@ with tab_finops:
                 labels={"cluster_name": "", "USD/mês": "USD/mês"},
             )
             fig_cost.update_coloraxes(showscale=False)
-            st.plotly_chart(plotly_dark(fig_cost, 350), use_container_width=True)
+            show_chart(plotly_dark(fig_cost, 350))
 
         with col_f2:
             st.markdown("**Custo por Projeto (USD)**")
@@ -1341,7 +1439,7 @@ with tab_finops:
                 proj_cost, names="project_name", values="USD/mês",
                 hole=0.4, color_discrete_sequence=px.colors.sequential.Greens_r,
             )
-            st.plotly_chart(plotly_dark(fig_proj, 350), use_container_width=True)
+            show_chart(plotly_dark(fig_proj, 350))
 
         # Scale simulator
         st.divider()
@@ -1392,10 +1490,12 @@ with tab_compare:
 
         with col_a:
             st.markdown("### 🔵 Cluster A")
-            sel_a = st.selectbox("", all_names, index=0, key="cmp_a")
+            sel_a = st.selectbox("Cluster A", all_names, index=0, key="cmp_a",
+                                 label_visibility="collapsed")
         with col_b:
             st.markdown("### 🟠 Cluster B")
-            sel_b = st.selectbox("", all_names, index=min(1, len(all_names)-1), key="cmp_b")
+            sel_b = st.selectbox("Cluster B", all_names, index=min(1, len(all_names)-1),
+                                 key="cmp_b", label_visibility="collapsed")
 
         if st.button("🔍 Comparar", type="primary", key="btn_compare"):
             with st.spinner("Coletando dados de ambos os clusters…"):
@@ -1526,7 +1626,7 @@ with tab_compare:
             if vals_a == vals_b:
                 st.info("ℹ️ Os dois clusters têm métricas idênticas — o gráfico radar seria sobreposto.")
             else:
-                st.plotly_chart(fig_radar, use_container_width=True)
+                show_chart(fig_radar)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1572,7 +1672,7 @@ with tab_health:
 
             col_gauge, col_info = st.columns([2, 3])
             with col_gauge:
-                st.plotly_chart(health_gauge_fig(hs["score"], hs["color"]), use_container_width=True)
+                show_chart(health_gauge_fig(hs["score"], hs["color"]))
                 grade_color = hs["color"]
                 grade_val   = hs["grade"]
                 grade_score = hs["score"]
@@ -1647,7 +1747,7 @@ with tab_health:
                 height=250, plot_bgcolor="#0d1117", paper_bgcolor="#0d1117",
                 font_color="#ccc", margin=dict(t=40, b=10), xaxis=dict(range=[0, 35]),
             )
-            st.plotly_chart(fig_breakdown, use_container_width=True)
+            show_chart(fig_breakdown)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1810,13 +1910,13 @@ with tab_chat:
                         f"**{'Você' if m['role']=='user' else 'Claude'}:**\n{m['content']}"
                         for m in msgs_now
                     )
-                    pdf_bytes = generate_pdf_report(
+                    report_bytes, report_mime, report_ext = generate_pdf_report(
                         st.session_state.get("chat_context_name", "Chat"), hist_md
                     )
                     st.download_button(
-                        "📄 Exportar (.md)", data=pdf_bytes,
-                        file_name=f"maestro_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
-                        mime="text/markdown", use_container_width=True,
+                        f"📄 Exportar (.{report_ext})", data=report_bytes,
+                        file_name=f"maestro_{datetime.now().strftime('%Y%m%d_%H%M')}.{report_ext}",
+                        mime=report_mime, use_container_width=True,
                     )
             with t2:
                 if st.button("🗑️ Limpar", use_container_width=True):
@@ -1899,7 +1999,7 @@ with tab_chat:
                     _render_assistant(full_response, elapsed_ms)
                 except Exception as e:
                     elapsed_ms    = int((time.time() - t_start) * 1000)
-                    full_response = f"❌ Erro ao chamar Claude: {e}"
+                    full_response = friendly_api_error(e)
                     stream_ph.markdown(full_response)
 
             st.session_state["chat_messages"].append(
