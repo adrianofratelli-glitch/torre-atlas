@@ -33,7 +33,7 @@ st.set_page_config(
 )
 
 # ── Theme — MongoDB Atlas Design System ──────────────────────────────────────
-st.html("""
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -448,119 +448,6 @@ hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
 ::-webkit-scrollbar-thumb { background: rgba(0,237,100,0.15); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,237,100,0.35); }
 
-/* ══ SIDEBAR NAVIGATION ══════════════════════════════════════════════════════ */
-.mdb-nav-section-lbl {
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 2.2px;
-    color: #3D5A6C;
-    padding: 14px 4px 5px;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    display: block;
-}
-.mdb-nav-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 7px 10px 7px 10px;
-    border-radius: 5px;
-    border-left: 2px solid transparent;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 13px;
-    font-weight: 400;
-    color: #89979B;
-    margin-bottom: 1px;
-    transition: background 0.12s, color 0.12s;
-    cursor: default;
-}
-.mdb-nav-item:hover { background: rgba(0,237,100,0.05); color: #E3FCF7; }
-.mdb-nav-item.active {
-    background: rgba(0,237,100,0.09);
-    color: #00ED64;
-    border-left-color: #00ED64;
-    font-weight: 600;
-}
-.mdb-nav-check {
-    width: 13px;
-    height: 13px;
-    border: 1.5px solid currentColor;
-    border-radius: 2px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.65;
-    font-size: 9px;
-}
-.mdb-nav-item.active .mdb-nav-check {
-    background: #00ED64;
-    border-color: #00ED64;
-    color: #001E2B;
-    opacity: 1;
-}
-
-/* ══ BREADCRUMB TOPBAR ═══════════════════════════════════════════════════════ */
-.mdb-breadcrumb {
-    background: linear-gradient(90deg, #023430 0%, #001E2B 70%);
-    border-bottom: 2px solid #00ED64;
-    border-radius: 8px 8px 0 0;
-    padding: 14px 22px;
-    display: flex;
-    align-items: center;
-    gap: 0;
-    margin-bottom: 6px;
-}
-.mdb-breadcrumb-title {
-    font-size: 17px;
-    font-weight: 800;
-    color: #E3FCF7;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    letter-spacing: -0.3px;
-}
-.mdb-breadcrumb-sep {
-    font-size: 14px;
-    color: #3D5A6C;
-    margin: 0 10px;
-}
-.mdb-breadcrumb-sub {
-    font-size: 13px;
-    color: #89979B;
-    font-family: 'IBM Plex Mono', monospace;
-    letter-spacing: 0.01em;
-}
-.mdb-breadcrumb-meta {
-    font-size: 11px;
-    color: #3D5A6C;
-    font-family: 'IBM Plex Mono', monospace;
-    margin-left: auto;
-}
-.mdb-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 7px 16px;
-    border-radius: 6px;
-    font-family: 'Plus Jakarta Sans', sans-serif;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-.mdb-btn-outline {
-    background: transparent;
-    color: #E3FCF7;
-    border: 1.5px solid rgba(255,255,255,0.15);
-}
-.mdb-btn-outline:hover { border-color: rgba(0,237,100,0.4); color: #00ED64; }
-.mdb-btn-primary {
-    background: var(--green);
-    color: #001E2B;
-    border: none;
-    box-shadow: 0 0 16px rgba(0,237,100,0.25);
-}
-.mdb-btn-primary:hover { background: #00FF6E; box-shadow: 0 0 24px rgba(0,237,100,0.4); }
-
 /* ══ CUSTOM CLASSES ══════════════════════════════════════════════════════════ */
 .health-grade {
     font-size: 3rem !important;
@@ -720,7 +607,7 @@ hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
 }
 
 </style>
-""")
+""", unsafe_allow_html=True)
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -739,77 +626,30 @@ with st.sidebar:
       </div>
     </div>
     """, unsafe_allow_html=True)
-    # ── Navegação ──────────────────────────────────────────────────────────────
-    _nav_active = st.session_state.get("_nav_active", "clusters")
-    _NAV = [
-        ("PRINCIPAL", [
-            ("clusters", "Dashboard"),
-            ("finops",   "FinOps"),
-        ]),
-        ("ANALYTICS", [
-            ("pa",       "Performance Advisor"),
-            ("profiler", "Query Profiler"),
-            ("scale",    "Scale"),
-            ("compare",  "Compare"),
-            ("health",   "Health Score"),
-        ]),
-        ("TOOLS", [
-            ("chat",     "AI Agent"),
-        ]),
-        ("CONFIG", [
-            ("settings", "Settings"),
-        ]),
-    ]
-    _nav_html = ""
-    for _grp, _items in _NAV:
-        _nav_html += f'<span class="mdb-nav-section-lbl">{_grp}</span>'
-        for _key, _lbl in _items:
-            _cls = "active" if _nav_active == _key else ""
-            _chk = "✓" if _nav_active == _key else ""
-            _nav_html += (
-                f'<div class="mdb-nav-item {_cls}">'
-                f'<div class="mdb-nav-check">{_chk}</div>{_lbl}</div>'
-            )
-    st.markdown(_nav_html, unsafe_allow_html=True)
-
-    # Nav buttons invisíveis para troca de estado (um por item)
-    _nav_cols = st.columns(len([i for _, g in _NAV for i in g]))
-    _nav_idx = 0
-    for _, _items in _NAV:
-        for _key, _lbl in _items:
-            with _nav_cols[_nav_idx]:
-                if st.button("·", key=f"_nav_{_key}", help=_lbl,
-                             use_container_width=True,
-                             label_visibility="hidden"):
-                    st.session_state["_nav_active"] = _key
-                    st.rerun()
-            _nav_idx += 1
-
     st.divider()
 
-    # ── Credenciais (collapsible) ──────────────────────────────────────────────
-    _cred_icon = "🟢" if bool(os.getenv("ATLAS_PUBLIC_KEY")) else "⚪"
-    with st.expander(f"{_cred_icon} Credenciais & Configurações", expanded=not bool(os.getenv("ATLAS_PUBLIC_KEY"))):
-        st.markdown("**🔑 Atlas API**")
-        pub_key     = st.text_input("Public Key",  value=os.getenv("ATLAS_PUBLIC_KEY",  ""), type="password")
-        priv_key    = st.text_input("Private Key", value=os.getenv("ATLAS_PRIVATE_KEY", ""), type="password")
-        org_id      = st.text_input("Org ID",      value=os.getenv("ATLAS_ORG_ID",      ""))
-        proj_id_env = st.text_input("Project ID",  value=os.getenv("ATLAS_PROJECT_ID",  ""))
+    st.markdown("### 🔑 Atlas API")
+    pub_key     = st.text_input("Public Key",  value=os.getenv("ATLAS_PUBLIC_KEY",  ""), type="password")
+    priv_key    = st.text_input("Private Key", value=os.getenv("ATLAS_PRIVATE_KEY", ""), type="password")
+    org_id      = st.text_input("Org ID",      value=os.getenv("ATLAS_ORG_ID",      ""))
+    proj_id_env = st.text_input("Project ID",  value=os.getenv("ATLAS_PROJECT_ID",  ""))
 
-        st.markdown("**🤖 Anthropic API**")
-        ant_key = st.text_input("API Key", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
+    st.markdown("### 🤖 Anthropic API")
+    ant_key = st.text_input("API Key", value=os.getenv("ANTHROPIC_API_KEY", ""), type="password")
 
-        st.markdown("**🔗 MongoDB Connection**")
-        mongo_uri = st.text_input(
-            "Connection String",
-            value=os.getenv("MONGODB_URI", ""),
-            type="password",
-            help="Necessário para criar índices diretamente.",
-        )
+    st.markdown("### 🔗 MongoDB Connection")
+    mongo_uri = st.text_input(
+        "Connection String",
+        value=os.getenv("MONGODB_URI", ""),
+        type="password",
+        help="Necessário para criar índices diretamente. Ex: mongodb+srv://user:pass@cluster.mongodb.net"
+    )
 
-        st.markdown("**⚙️ Configurações**")
-        usd_brl = st.number_input("USD/BRL", value=5.70, step=0.05, format="%.2f")
-        refresh_opt = st.selectbox("Auto-refresh", ["Off", "30s", "60s", "120s"], index=0)
+    st.divider()
+    st.markdown("### ⚙️ Configurações")
+    usd_brl = st.number_input("USD/BRL (cotação)", value=5.70, step=0.05, format="%.2f",
+                               help="Usado para estimativas de custo em BRL")
+    refresh_opt = st.selectbox("Auto-refresh", ["Off", "30s", "60s", "120s"], index=0)
 
     st.divider()
     connected = bool(pub_key and priv_key and (org_id or proj_id_env))
@@ -822,7 +662,7 @@ with st.sidebar:
         os.environ["ANTHROPIC_API_KEY"] = ant_key
         st.success("✅ Claude pronto")
     else:
-        st.info("ℹ️ Configure a Anthropic API Key para o AI Chat")
+        st.info("ℹ️ Configure a API Key Anthropic para o AI Chat")
 
     if mongo_uri:
         st.success("✅ Connection String configurada")
@@ -950,41 +790,32 @@ STATUS_ICON = {
     "REPEATING": "🟡 REPEATING",
 }
 
-refresh_badge = f" · 🔄 {refresh_opt}" if refresh_opt != "Off" else ""
-_active_nav   = st.session_state.get("_nav_active", "clusters")
-_tab_labels   = {
-    "clusters": "Dashboard", "finops": "FinOps", "pa": "Performance Advisor",
-    "profiler": "Query Profiler", "scale": "Scale", "compare": "Compare",
-    "health": "Health Score", "chat": "AI Agent", "settings": "Settings",
-}
-_page_title   = _tab_labels.get(_active_nav, "Dashboard")
-_org_display  = (org_id[:16] + "…") if len(org_id) > 16 else (org_id or "—")
-_proj_display = (proj_id_env[:16] + "…") if len(proj_id_env) > 16 else (proj_id_env or "—")
-
-_hcol, _rcol = st.columns([7, 2])
+refresh_badge = f"&nbsp;·&nbsp;🔄 {refresh_opt}" if refresh_opt != "Off" else ""
+_hcol, _rcol = st.columns([8, 1])
 with _hcol:
     st.markdown(
-        f'<div class="mdb-breadcrumb">'
-        f'<span class="mdb-breadcrumb-title">{_page_title}</span>'
-        f'<span class="mdb-breadcrumb-sep">·</span>'
-        f'<span class="mdb-breadcrumb-sub">org: {_org_display}</span>'
-        f'<span class="mdb-breadcrumb-sep">·</span>'
-        f'<span class="mdb-breadcrumb-sub">{len(all_clusters)} cluster(s)</span>'
-        f'<span class="mdb-breadcrumb-meta">'
-        f'{datetime.now().strftime("%H:%M:%S")}{refresh_badge}</span>'
-        f'</div>',
+        f'<div style="'
+        f'background:linear-gradient(90deg,#023430 0%,#001E2B 60%);'
+        f'border-bottom:2px solid #00ED64;'
+        f'border-radius:8px 8px 0 0;'
+        f'padding:16px 22px 14px;'
+        f'display:flex;align-items:center;gap:14px;margin-bottom:6px;">'
+        f'<svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>'
+        f'</svg>'
+        f'<div>'
+        f'<div style="font-size:18px;font-weight:800;color:#E3FCF7;font-family:\'Plus Jakarta Sans\',sans-serif;letter-spacing:-0.3px;line-height:1.1;">'
+        f'Maestro <span style="color:#00ED64;">Atlas Control Plane</span></div>'
+        f'<div style="font-size:11px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;margin-top:2px;">'
+        f'org:&nbsp;{org_id}&nbsp;&nbsp;·&nbsp;&nbsp;{len(all_clusters)}&nbsp;cluster(s)&nbsp;&nbsp;·&nbsp;&nbsp;{datetime.now().strftime("%H:%M:%S")}{refresh_badge}</div>'
+        f'</div></div>',
         unsafe_allow_html=True,
     )
 with _rcol:
-    st.markdown("<div style='margin-top:6px;display:flex;gap:8px;'>", unsafe_allow_html=True)
-    _bc1, _bc2 = st.columns(2)
-    with _bc1:
-        if st.button("↺  Refresh", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-    with _bc2:
-        if st.button("＋  Nova POC", use_container_width=True, type="primary"):
-            st.info("Configure as credenciais de uma nova POC na sidebar.")
+    st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
+    if st.button("🔄 Refresh"):
+        st.cache_data.clear()
+        st.rerun()
 
 if load_error:
     st.error(f"Erro ao carregar clusters: {load_error}")
