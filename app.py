@@ -737,7 +737,11 @@ with st.sidebar:
     st.markdown("### ⚙️ Configurações")
     usd_brl = st.number_input("USD/BRL (cotação)", value=5.70, step=0.05, format="%.2f",
                                help="Usado para estimativas de custo em BRL")
-    refresh_opt = st.selectbox("Auto-refresh", ["Off", "30s", "60s", "120s"], index=0)
+    refresh_opt = st.selectbox(
+        "Sync com Atlas (auto-refresh)", ["Off", "30s", "60s", "120s"], index=1,
+        help="O painel re-sincroniza as métricas vivas com o Atlas neste intervalo, "
+             "sem precisar de interação.",
+    )
 
     st.divider()
     connected = bool(pub_key and priv_key and (org_id or proj_id_env))
@@ -859,9 +863,9 @@ def count_open_alerts(_client: AtlasClient, project_ids: tuple) -> int:
     return total
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=25, show_spinner=False)
 def get_measurements_cached(_client: AtlasClient, project_id: str, cluster_name: str) -> dict:
-    """Métricas pontuais do primário, cacheadas por 60s."""
+    """Métricas vivas do primário, cache curto (25s) para acompanhar o Atlas."""
     pid = _client.get_primary(project_id, cluster_name)
     if not pid:
         return {}
@@ -877,7 +881,7 @@ def get_series_cached(_client: AtlasClient, project_id: str, cluster_name: str) 
     return _client.get_measurements_series(project_id, pid)
 
 
-@st.cache_data(ttl=90, show_spinner=False)
+@st.cache_data(ttl=25, show_spinner=False)
 def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int = 12) -> dict:
     """
     Agrega health + métricas vivas de cada cluster para a aba Visão Geral.
@@ -943,8 +947,18 @@ with st.spinner("🍃 Conectando ao MongoDB Atlas…"):
     all_clusters, load_error = load_all_clusters(client)
 
 
-# ── Auto-refresh real (sem precisar de interação) ──────────────────────────────
+# ── Auto-refresh real (sync contínuo com o Atlas, sem interação) ───────────────
 REFRESH_INTERVALS = {"30s": 30, "60s": 60, "120s": 120}
+
+def _resync_live_metrics():
+    """Invalida só os caches de métricas vivas — re-busca do Atlas no próximo render.
+    Mantém a lista de clusters cacheada (muda raramente, evita rate-limit)."""
+    for fn in (gather_overview, get_measurements_cached, get_series_cached, count_open_alerts):
+        try:
+            fn.clear()
+        except Exception:
+            pass
+
 if refresh_opt != "Off":
     interval = REFRESH_INTERVALS[refresh_opt]
     try:
@@ -952,14 +966,14 @@ if refresh_opt != "Off":
         _count = st_autorefresh(interval=interval * 1000, key="auto_refresh_timer")
         if _count and _count != st.session_state.get("_last_autorefresh_count"):
             st.session_state["_last_autorefresh_count"] = _count
-            st.cache_data.clear()
+            _resync_live_metrics()   # re-sincroniza com o Atlas a cada ciclo
     except ImportError:
         now = time.time()
         if "last_refresh" not in st.session_state:
             st.session_state["last_refresh"] = now
         elif now - st.session_state["last_refresh"] >= interval:
             st.session_state["last_refresh"] = now
-            st.cache_data.clear()
+            _resync_live_metrics()
             st.rerun()
 
 
