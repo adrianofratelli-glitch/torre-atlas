@@ -613,15 +613,78 @@ hr { border-color: var(--border-2) !important; margin: 16px 0 !important; }
 """, unsafe_allow_html=True)
 
 
+# ── Branding helpers (logo MongoDB reutilizável) ──────────────────────────────
+def mdb_leaf(size: int = 28, color: str = "#00ED64") -> str:
+    """SVG do logo folha MongoDB. Centralizado para evitar duplicação."""
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 28 28" fill="none" '
+        f'xmlns="http://www.w3.org/2000/svg">'
+        f'<path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8'
+        f'c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3'
+        f'c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 '
+        f'4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="{color}"/></svg>'
+    )
+
+
+def empty_state(icon: str, title: str, hint: str):
+    """Card de estado vazio amigável (substitui telas em branco com botão solto)."""
+    st.markdown(
+        f'<div style="text-align:center;padding:36px 20px;background:#002235;'
+        f'border:1px dashed rgba(0,237,100,0.18);border-radius:10px;margin-top:8px;">'
+        f'<div style="font-size:34px;margin-bottom:8px;opacity:0.85;">{icon}</div>'
+        f'<div style="font-size:15px;font-weight:700;color:#E3FCF7;'
+        f'font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:6px;">{title}</div>'
+        f'<div style="font-size:12px;color:#89979B;font-family:\'IBM Plex Mono\',monospace;'
+        f'max-width:420px;margin:0 auto;line-height:1.6;">{hint}</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def load_chart_fig(series: dict, height: int = 320):
+    """Constrói o gráfico de carga 24h (CPU% + Queries/s) em dual-axis. Reutilizável."""
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=series["timestamps"], y=series["cpu"], name="CPU %", mode="lines",
+        line=dict(color="#00ED64", width=2), fill="tozeroy",
+        fillcolor="rgba(0,237,100,0.10)",
+    ))
+    fig.add_trace(go.Scatter(
+        x=series["timestamps"], y=series["ops_query"], name="Queries/s", mode="lines",
+        line=dict(color="#38BDF8", width=2), yaxis="y2",
+    ))
+    fig.update_layout(
+        height=height, plot_bgcolor="#001E2B", paper_bgcolor="#002235",
+        font_color="#89979B", font_family="IBM Plex Mono",
+        margin=dict(t=30, b=20, l=10, r=10),
+        legend=dict(orientation="h", y=1.14, bgcolor="rgba(0,0,0,0)"),
+        yaxis=dict(title="CPU %", gridcolor="rgba(255,255,255,0.05)"),
+        yaxis2=dict(title="ops/s", overlaying="y", side="right", showgrid=False),
+        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
+    )
+    return fig
+
+
+def friendly_atlas_error(err) -> str:
+    """Mensagens amigáveis para falhas da Atlas Admin API (sem stack trace na demo)."""
+    msg = str(err).lower()
+    if "401" in msg or "unauthorized" in msg or "authentication" in msg:
+        return ("🔑 **Credenciais Atlas inválidas.** Verifique a Public/Private Key no painel "
+                "lateral e se o seu IP está na **API Access List** do Atlas.")
+    if "403" in msg or "forbidden" in msg or "not authorized" in msg:
+        return ("🔒 **Permissão insuficiente.** A API Key precisa de **Organization Read Only** "
+                "+ **Project Cluster Manager**.")
+    if "connection" in msg or "timeout" in msg or "network" in msg or "max retries" in msg:
+        return ("🌐 **Falha de conexão com o Atlas.** Verifique sua internet e tente novamente.")
+    return f"❌ **Erro ao consultar o Atlas:** {err}"
+
+
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     # ── MongoDB leaf logo + brand ──────────────────────────────────────────
-    st.markdown("""
+    st.markdown(f"""
     <div style="padding:18px 4px 14px;border-bottom:1px solid rgba(0,237,100,0.12);margin-bottom:16px;">
       <div style="display:flex;align-items:center;gap:10px;">
-        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>
-        </svg>
+        {mdb_leaf(28)}
         <div>
           <div style="font-size:15px;font-weight:800;color:#E3FCF7;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.2px;line-height:1.2;">Maestro</div>
           <div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.8px;font-family:'Plus Jakarta Sans',sans-serif;margin-top:1px;">Atlas Control Plane · v2.0</div>
@@ -685,11 +748,9 @@ with st.sidebar:
 
 # ── Guard ─────────────────────────────────────────────────────────────────────
 if not connected:
-    st.markdown("""
+    st.markdown(f"""
     <div style="max-width:600px;margin:80px auto 0;text-align:center;">
-      <svg width="52" height="52" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom:20px;">
-        <path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>
-      </svg>
+      <div style="margin-bottom:20px;">{mdb_leaf(52)}</div>
       <div style="font-size:28px;font-weight:800;color:#E3FCF7;font-family:'Plus Jakarta Sans',sans-serif;letter-spacing:-0.5px;margin-bottom:8px;">
         Maestro <span style="color:#00ED64;">Atlas Control Plane</span>
       </div>
@@ -904,9 +965,7 @@ with _hcol:
         f'border-radius:8px 8px 0 0;'
         f'padding:16px 22px 14px;'
         f'display:flex;align-items:center;gap:14px;margin-bottom:6px;">'
-        f'<svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">'
-        f'<path d="M14 2C8.48 2 4 6.7 4 12.5c0 4.1 2.1 7.7 5.3 9.7l.7 3.3c.1.3.3.5.6.5h6.8c.3 0 .5-.2.6-.5l.7-3.3C21.9 20.2 24 16.6 24 12.5 24 6.7 19.52 2 14 2zm.8 16.2v3.3c0 .1-.1.2-.2.2h-1.2c-.1 0-.2-.1-.2-.2v-3.3C11.1 17.4 9.5 15 9.5 12.5c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5c0 2.5-1.6 4.9-3.7 5.7z" fill="#00ED64"/>'
-        f'</svg>'
+        f'{mdb_leaf(26)}'
         f'<div>'
         f'<div style="font-size:18px;font-weight:800;color:#E3FCF7;font-family:\'Plus Jakarta Sans\',sans-serif;letter-spacing:-0.3px;line-height:1.1;">'
         f'Maestro <span style="color:#00ED64;">Atlas Control Plane</span></div>'
@@ -922,7 +981,7 @@ with _rcol:
         st.rerun()
 
 if load_error:
-    st.error(f"Erro ao carregar clusters: {load_error}")
+    st.error(friendly_atlas_error(load_error))
     st.stop()
 
 st.divider()
@@ -1193,26 +1252,7 @@ with tab_overview:
                 mdb_section_header("Carga 24h", badge=_active["cluster_name"], badge_color="green")
                 _s = get_series_cached(client, _active["project_id"], _active["cluster_name"])
                 if _s and "error" not in _s and _s.get("timestamps"):
-                    fig_ov = go.Figure()
-                    fig_ov.add_trace(go.Scatter(
-                        x=_s["timestamps"], y=_s["cpu"], name="CPU %", mode="lines",
-                        line=dict(color="#00ED64", width=2), fill="tozeroy",
-                        fillcolor="rgba(0,237,100,0.10)",
-                    ))
-                    fig_ov.add_trace(go.Scatter(
-                        x=_s["timestamps"], y=_s["ops_query"], name="Queries/s", mode="lines",
-                        line=dict(color="#38BDF8", width=2), yaxis="y2",
-                    ))
-                    fig_ov.update_layout(
-                        height=320, plot_bgcolor="#001E2B", paper_bgcolor="#002235",
-                        font_color="#89979B", font_family="IBM Plex Mono",
-                        margin=dict(t=30, b=20, l=10, r=10),
-                        legend=dict(orientation="h", y=1.14, bgcolor="rgba(0,0,0,0)"),
-                        yaxis=dict(title="CPU %", gridcolor="rgba(255,255,255,0.05)"),
-                        yaxis2=dict(title="ops/s", overlaying="y", side="right", showgrid=False),
-                        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-                    )
-                    show_chart(fig_ov)
+                    show_chart(load_chart_fig(_s, height=320))
                 else:
                     st.caption("Sem dados históricos disponíveis para este cluster.")
             else:
@@ -1301,15 +1341,21 @@ with tab_pa:
                 try:
                     pid = client.get_primary(proj_id_pa, cluster_name_pa)
                     if not pid:
-                        st.error("Processo primário não encontrado.")
+                        st.error("Processo primário não encontrado (cluster pode estar pausado).")
                     else:
                         pa_data = client.get_suggested_indexes(proj_id_pa, pid)
                         st.session_state["pa_data"]         = pa_data
                         st.session_state["pa_cluster_name"] = cluster_name_pa
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(friendly_atlas_error(e))
 
-        if "pa_data" in st.session_state and st.session_state.get("pa_cluster_name") == cluster_name_pa:
+        _pa_ready = "pa_data" in st.session_state and st.session_state.get("pa_cluster_name") == cluster_name_pa
+        if not _pa_ready:
+            empty_state("⚡", "Analise os índices de um cluster",
+                        f"Selecione o cluster <b>{cluster_name_pa}</b> e clique em "
+                        "<b>Buscar Recomendações</b> para o Performance Advisor sugerir índices "
+                        "com base nos padrões de acesso reais.")
+        if _pa_ready:
             suggestions = st.session_state["pa_data"].get("suggestedIndexes", [])
             if not suggestions:
                 st.success(f"✅ Nenhuma recomendação para **{cluster_name_pa}** — cluster saudável!")
@@ -1392,15 +1438,21 @@ with tab_profiler:
                 try:
                     pid_qp = client.get_primary(proj_id_qp, cluster_name_qp)
                     if not pid_qp:
-                        st.error("Processo primário não encontrado.")
+                        st.error("Processo primário não encontrado (cluster pode estar pausado).")
                     else:
                         sq_data = client.get_slow_queries(proj_id_qp, pid_qp)
                         st.session_state["sq_data"]         = sq_data
                         st.session_state["sq_cluster_name"] = cluster_name_qp
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(friendly_atlas_error(e))
 
-        if "sq_data" in st.session_state and st.session_state.get("sq_cluster_name") == cluster_name_qp:
+        _qp_ready = "sq_data" in st.session_state and st.session_state.get("sq_cluster_name") == cluster_name_qp
+        if not _qp_ready:
+            empty_state("🔍", "Investigue as queries lentas",
+                        f"Clique em <b>Carregar Slow Queries</b> para ver as operações mais "
+                        "lentas de <b>" + cluster_name_qp + "</b> — com plano de execução, "
+                        "documentos examinados e latência.")
+        if _qp_ready:
             sq_list = st.session_state["sq_data"].get("slowQueries", [])
             if not sq_list:
                 st.success(f"✅ Nenhuma slow query em **{cluster_name_qp}**.")
@@ -1522,28 +1574,7 @@ with tab_scale:
             with st.expander("📈 Carga das últimas 24h (CPU · Operações)", expanded=False):
                 _series = get_series_cached(client, proj_id_sc, cluster_name_sc)
                 if _series and "error" not in _series and _series.get("timestamps"):
-                    import plotly.graph_objects as _go
-                    ts = _series["timestamps"]
-                    fig_hist = _go.Figure()
-                    fig_hist.add_trace(_go.Scatter(
-                        x=ts, y=_series["cpu"], name="CPU %", mode="lines",
-                        line=dict(color="#00ED64", width=2), fill="tozeroy",
-                        fillcolor="rgba(0,237,100,0.08)",
-                    ))
-                    fig_hist.add_trace(_go.Scatter(
-                        x=ts, y=_series["ops_query"], name="Queries/s", mode="lines",
-                        line=dict(color="#38BDF8", width=2), yaxis="y2",
-                    ))
-                    fig_hist.update_layout(
-                        height=300, plot_bgcolor="#001E2B", paper_bgcolor="#002235",
-                        font_color="#89979B", font_family="IBM Plex Mono",
-                        margin=dict(t=30, b=20, l=10, r=10),
-                        legend=dict(orientation="h", y=1.12, bgcolor="rgba(0,0,0,0)"),
-                        yaxis=dict(title="CPU %", gridcolor="rgba(255,255,255,0.05)"),
-                        yaxis2=dict(title="ops/s", overlaying="y", side="right", showgrid=False),
-                        xaxis=dict(gridcolor="rgba(255,255,255,0.05)"),
-                    )
-                    show_chart(fig_hist)
+                    show_chart(load_chart_fig(_series, height=300))
                 else:
                     st.caption("Sem dados históricos disponíveis para este cluster.")
 
@@ -1902,9 +1933,15 @@ with tab_health:
                     st.session_state["hs_n_pa"]     = n_pa
                     st.session_state["hs_n_sq"]     = n_sq
                 except Exception as e:
-                    st.error(f"Erro: {e}")
+                    st.error(friendly_atlas_error(e))
 
-        if "hs_result" in st.session_state and st.session_state.get("hs_result_cluster") == cluster_name_hs:
+        _hs_ready = "hs_result" in st.session_state and st.session_state.get("hs_result_cluster") == cluster_name_hs
+        if not _hs_ready:
+            empty_state("🏥", "Avalie a saúde do cluster",
+                        f"Clique em <b>Calcular Health Score</b> para gerar uma nota de 0–100 de "
+                        "<b>" + cluster_name_hs + "</b>, combinando Performance Advisor, slow "
+                        "queries, status e versão do MongoDB.")
+        if _hs_ready:
             hs  = st.session_state["hs_result"]
             n_pa = st.session_state.get("hs_n_pa", 0)
             n_sq = st.session_state.get("hs_n_sq", 0)
@@ -2255,3 +2292,18 @@ with tab_chat:
             )
             st.session_state["_pending_response"] = True
             st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FOOTER
+# ══════════════════════════════════════════════════════════════════════════════
+st.markdown(
+    f'<div style="margin-top:48px;padding:18px 0 8px;border-top:1px solid rgba(0,237,100,0.10);'
+    f'display:flex;align-items:center;justify-content:center;gap:8px;opacity:0.8;">'
+    f'{mdb_leaf(16)}'
+    f'<span style="font-size:11px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;'
+    f'letter-spacing:0.5px;">Maestro · Atlas Control Plane · powered by '
+    f'<span style="color:#00ED64;">MongoDB Atlas Admin API</span> + '
+    f'<span style="color:#00ED64;">Claude</span></span></div>',
+    unsafe_allow_html=True,
+)
