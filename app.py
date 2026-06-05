@@ -640,6 +640,28 @@ def empty_state(icon: str, title: str, hint: str):
     )
 
 
+def mdb_metric_strip(items: list):
+    """
+    Tira compacta de métricas (label · valor · cor) — para o painel Real Time.
+    items = [{"label": str, "value": str, "color": "#hex" (opcional)}]
+    """
+    tiles = ""
+    for it in items:
+        col = it.get("color", "#E3FCF7")
+        tiles += (
+            f'<div style="flex:1 1 120px;min-width:120px;background:#002235;'
+            f'border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;">'
+            f'<div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.2px;'
+            f'font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:5px;">{it["label"]}</div>'
+            f'<div style="font-size:18px;font-weight:700;color:{col};'
+            f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">{it["value"]}</div></div>'
+        )
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 18px;">{tiles}</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def load_chart_fig(series: dict, height: int = 320):
     """Constrói o gráfico de carga 24h (CPU% + Queries/s) em dual-axis. Reutilizável."""
     fig = go.Figure()
@@ -876,6 +898,7 @@ def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int
     for (pid, cname, status, tier, mver) in cluster_keys[:max_clusters]:
         n_pa = n_sq = 0
         cpu = conn = ops = None
+        meas = {}
         if status not in ("PAUSED", "DELETING", "CREATING"):
             try:
                 primary = _client.get_primary(pid, cname)
@@ -885,28 +908,25 @@ def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int
                         n_sq = len(_client.get_slow_queries(pid, primary).get("slowQueries", []))
                     except Exception:
                         pass
-                    # Usa a MESMA série de 24h do gráfico (mais confiável que o ponto-a-ponto)
-                    series = _client.get_measurements_series(pid, primary)
-                    if series and "error" not in series:
-                        cpu  = _last_nonnull(series.get("cpu"))
-                        conn = _last_nonnull(series.get("connections"))
-                        oq   = _last_nonnull(series.get("ops_query"))  or 0
-                        oi   = _last_nonnull(series.get("ops_insert")) or 0
-                        ou   = _last_nonnull(series.get("ops_update")) or 0
-                        ops  = round(oq + oi + ou, 1)
-                        if cpu is not None:
-                            cpus.append(cpu)
-                        if conn is not None:
-                            tot_conn += conn
-                        tot_ops += ops
+                    # Métricas vivas (CPU normalizada, janela de 5 min) — igual ao Real Time
+                    m = _client.get_measurements(pid, primary)
+                    if m and "error" not in m:
+                        meas = m
+                        cpu  = m.get("cpu_pct", 0)
+                        conn = m.get("connections", 0)
+                        ops  = round(m.get("ops_query", 0) + m.get("ops_insert", 0)
+                                     + m.get("ops_update", 0) + m.get("ops_delete", 0), 1)
+                        cpus.append(cpu)
+                        tot_conn += conn
+                        tot_ops  += ops
             except Exception:
                 pass
         hs = calculate_health_score(status, n_pa, n_sq, mver)
         out.append({
             "name": cname, "status": status, "tier": tier, "mver": mver,
-            "n_pa": n_pa, "n_sq": n_sq,
+            "n_pa": n_pa, "n_sq": n_sq, "pid": pid,
             "score": hs["score"], "grade": hs["grade"], "color": hs["color"],
-            "cpu": cpu, "conn": conn, "ops": ops,
+            "cpu": cpu, "conn": conn, "ops": ops, "meas": meas,
         })
     org_health = round(sum(c["score"] for c in out) / len(out)) if out else 0
     return {
@@ -1223,7 +1243,11 @@ with tab_overview:
             for c in ov["clusters"]:
                 dot = {"IDLE": "#00ED64", "PAUSED": "#FACC15"}.get(c["status"], "#38BDF8")
                 grade_c = c["color"]
-                cpu_txt = f"{c['cpu']}% CPU" if c["cpu"] is not None else "métricas n/d"
+                _m = c.get("meas") or {}
+                if c["cpu"] is not None:
+                    sub = f'CPU {c["cpu"]}% · {_m.get("memory_used_gb", 0)}GB · {c["conn"]} conn'
+                else:
+                    sub = "métricas n/d"
                 st.markdown(
                     f'<div style="background:#002235;border:1px solid rgba(255,255,255,0.06);'
                     f'border-left:3px solid {grade_c};border-radius:6px;padding:12px 16px;margin-bottom:8px;'
@@ -1234,7 +1258,7 @@ with tab_overview:
                     f'<div style="font-size:13px;font-weight:700;color:#E3FCF7;'
                     f'font-family:\'IBM Plex Mono\',monospace;">{c["name"]}</div>'
                     f'<div style="font-size:11px;color:#89979B;margin-top:2px;">'
-                    f'{c["tier"]} · {cpu_txt} · MongoDB {c["mver"]}</div></div>'
+                    f'{c["tier"]} · {sub} · MongoDB {c["mver"]}</div></div>'
                     f'<div style="text-align:right;flex-shrink:0;">'
                     f'<div style="font-size:18px;font-weight:800;color:{grade_c};'
                     f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">{c["grade"]}</div>'
@@ -1258,6 +1282,36 @@ with tab_overview:
             else:
                 mdb_section_header("Carga 24h", badge="—", badge_color="yellow")
                 st.caption("Nenhum cluster ativo para exibir métricas.")
+
+        # ── Métricas em Tempo Real (cluster ativo em destaque) ──
+        _feat = next((c for c in ov["clusters"] if c.get("meas")), None)
+        if _feat:
+            m = _feat["meas"]
+            mdb_section_header("Métricas em Tempo Real", badge=_feat["name"], badge_color="green",
+                               sub="janela de 5 min")
+            _cpu  = m.get("cpu_pct", 0)
+            _qt   = m.get("query_targeting", 0)
+            mdb_metric_strip([
+                {"label": "CPU",          "value": f"{_cpu}%",
+                 "color": "#F87171" if _cpu >= 75 else "#FACC15" if _cpu >= 50 else "#00ED64"},
+                {"label": "Memória",      "value": f"{m.get('memory_used_gb',0)}/{m.get('mem_total_gb',0)}GB",
+                 "color": "#38BDF8"},
+                {"label": "Conexões",     "value": f"{m.get('connections',0)}", "color": "#00ED64"},
+                {"label": "Disk IOPS R/W","value": f"{m.get('disk_iops_read',0):.0f}/{m.get('disk_iops_write',0):.0f}",
+                 "color": "#89979B"},
+                {"label": "Disk Lat R/W", "value": f"{m.get('disk_lat_read',0):.0f}/{m.get('disk_lat_write',0):.0f}ms",
+                 "color": "#89979B"},
+                {"label": "Rede In/Out",  "value": f"{m.get('net_in_mb',0):.1f}/{m.get('net_out_mb',0):.1f}MB",
+                 "color": "#38BDF8"},
+                {"label": "Queries/s",    "value": f"{m.get('ops_query',0):.0f}", "color": "#00ED64"},
+                {"label": "Inserts/s",    "value": f"{m.get('ops_insert',0):.0f}", "color": "#00ED64"},
+                {"label": "Updates/s",    "value": f"{m.get('ops_update',0):.0f}", "color": "#00ED64"},
+                {"label": "Query Target.","value": f"{_qt:.1f}x",
+                 "color": "#F87171" if _qt >= 100 else "#FACC15" if _qt >= 10 else "#00ED64"},
+            ])
+            if _qt >= 100:
+                st.caption("⚠️ **Query Targeting alto** — muitos documentos escaneados por resultado "
+                           "retornado. Forte indício de índices faltando (veja Performance Advisor).")
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -154,63 +154,89 @@ class AtlasClient:
     # ── Hardware Measurements ─────────────────────────────────────────────
     def get_measurements(self, project_id: str, process_id: str) -> dict:
         """
-        Busca métricas de hardware do primário nos últimos 5 minutos.
-        Retorna o último valor de cada métrica em formato legível.
-        Métricas: CPU, Memória, Disk IOPS, Conexões, Opcounters.
+        Busca métricas de hardware do primário (janela recente de 5 min).
+        Usa CPU NORMALIZADA (0–100% por core, igual ao painel Real Time do Atlas)
+        e pega o último valor não-nulo de cada métrica (Atlas atrasa ~1-2 min).
+
+        Métricas: CPU, Memória, Conexões, Disk IOPS + Latência, Rede,
+        Opcounters (query/insert/update/delete/getmore/command) e Query Targeting.
         """
         METRICS = [
-            "SYSTEM_CPU_USER",
-            "SYSTEM_CPU_KERNEL",
-            "SYSTEM_MEMORY_USED",
-            "SYSTEM_MEMORY_AVAILABLE",
-            "DISK_PARTITION_IOPS_READ",
-            "DISK_PARTITION_IOPS_WRITE",
+            # CPU normalizada (preferida) + fallback não-normalizado
+            "SYSTEM_NORMALIZED_CPU_USER", "SYSTEM_NORMALIZED_CPU_KERNEL",
+            "SYSTEM_CPU_USER", "SYSTEM_CPU_KERNEL",
+            # Memória
+            "SYSTEM_MEMORY_USED", "SYSTEM_MEMORY_AVAILABLE",
+            # Conexões
             "CONNECTIONS",
-            "OPCOUNTER_INSERT",
-            "OPCOUNTER_QUERY",
-            "OPCOUNTER_UPDATE",
-            "OPCOUNTER_DELETE",
-            "NETWORK_BYTES_IN",
-            "NETWORK_BYTES_OUT",
+            # Disco
+            "DISK_PARTITION_IOPS_READ", "DISK_PARTITION_IOPS_WRITE",
+            "DISK_PARTITION_LATENCY_READ", "DISK_PARTITION_LATENCY_WRITE",
+            "DISK_PARTITION_SPACE_PERCENT_USED",
+            # Operações
+            "OPCOUNTER_INSERT", "OPCOUNTER_QUERY", "OPCOUNTER_UPDATE",
+            "OPCOUNTER_DELETE", "OPCOUNTER_GETMORE", "OPCOUNTER_CMD",
+            # Rede
+            "NETWORK_BYTES_IN", "NETWORK_BYTES_OUT",
+            # Eficiência de query (scanned/returned — quanto menor, melhor)
+            "QUERY_TARGETING_SCANNED_OBJECTS_PER_RETURNED",
         ]
         try:
             data = self._get(
                 f"/groups/{project_id}/processes/{process_id}/measurements",
                 params={
                     "granularity": "PT1M",
-                    "period":      "PT10M",
+                    "period":      "PT5M",
                     "m":           METRICS,
                 },
             )
         except Exception as e:
             return {"error": str(e)}
 
+        def _last_nonnull(points):
+            for p in reversed(points):
+                if p.get("value") is not None:
+                    return p["value"]
+            return None
+
         result = {}
         for m in data.get("measurements", []):
-            name   = m.get("name", "")
-            points = [p["value"] for p in m.get("dataPoints", []) if p.get("value") is not None]
-            if points:
-                result[name] = round(points[-1], 2)
+            name = m.get("name", "")
+            val  = _last_nonnull(m.get("dataPoints", []))
+            if val is not None:
+                result[name] = round(val, 2)
 
-        # Formata em algo legível para o sistema prompt do Claude
+        # CPU: prefere normalizada (0–100%), cai para não-normalizada se ausente
+        cpu_user = result.get("SYSTEM_NORMALIZED_CPU_USER")
+        cpu_kern = result.get("SYSTEM_NORMALIZED_CPU_KERNEL")
+        if cpu_user is None and cpu_kern is None:
+            cpu_user = result.get("SYSTEM_CPU_USER", 0)
+            cpu_kern = result.get("SYSTEM_CPU_KERNEL", 0)
+
+        mem_used  = result.get("SYSTEM_MEMORY_USED", 0)
+        mem_avail = result.get("SYSTEM_MEMORY_AVAILABLE", 0)
+
         formatted = {}
-        cpu_user   = result.get("SYSTEM_CPU_USER", 0)
-        cpu_kernel = result.get("SYSTEM_CPU_KERNEL", 0)
-        mem_used   = result.get("SYSTEM_MEMORY_USED", 0)
-        mem_avail  = result.get("SYSTEM_MEMORY_AVAILABLE", 0)
-
-        formatted["cpu_pct"]          = round(cpu_user + cpu_kernel, 1)
-        formatted["memory_used_gb"]   = round(mem_used   / 1024, 2) if mem_used   else 0
-        formatted["memory_avail_gb"]  = round(mem_avail  / 1024, 2) if mem_avail  else 0
+        formatted["cpu_pct"]          = round((cpu_user or 0) + (cpu_kern or 0), 1)
+        formatted["memory_used_gb"]   = round(mem_used  / 1024, 2) if mem_used  else 0
+        formatted["memory_avail_gb"]  = round(mem_avail / 1024, 2) if mem_avail else 0
+        formatted["mem_total_gb"]     = round((mem_used + mem_avail) / 1024, 1) if (mem_used or mem_avail) else 0
+        formatted["mem_pct"]          = round(mem_used / (mem_used + mem_avail) * 100, 1) if (mem_used + mem_avail) else 0
+        formatted["connections"]      = int(result.get("CONNECTIONS", 0))
         formatted["disk_iops_read"]   = result.get("DISK_PARTITION_IOPS_READ",  0)
         formatted["disk_iops_write"]  = result.get("DISK_PARTITION_IOPS_WRITE", 0)
-        formatted["connections"]      = int(result.get("CONNECTIONS", 0))
+        formatted["disk_lat_read"]    = result.get("DISK_PARTITION_LATENCY_READ",  0)
+        formatted["disk_lat_write"]   = result.get("DISK_PARTITION_LATENCY_WRITE", 0)
+        formatted["disk_pct"]         = result.get("DISK_PARTITION_SPACE_PERCENT_USED", 0)
         formatted["ops_insert"]       = result.get("OPCOUNTER_INSERT", 0)
         formatted["ops_query"]        = result.get("OPCOUNTER_QUERY",  0)
         formatted["ops_update"]       = result.get("OPCOUNTER_UPDATE", 0)
         formatted["ops_delete"]       = result.get("OPCOUNTER_DELETE", 0)
+        formatted["ops_getmore"]      = result.get("OPCOUNTER_GETMORE", 0)
+        formatted["ops_command"]      = result.get("OPCOUNTER_CMD", 0)
         formatted["net_in_mb"]        = round(result.get("NETWORK_BYTES_IN",  0) / 1_048_576, 2)
         formatted["net_out_mb"]       = round(result.get("NETWORK_BYTES_OUT", 0) / 1_048_576, 2)
+        formatted["query_targeting"]  = result.get("QUERY_TARGETING_SCANNED_OBJECTS_PER_RETURNED", 0)
         formatted["_raw"]             = result
         return formatted
 
