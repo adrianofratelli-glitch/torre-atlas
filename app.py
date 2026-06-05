@@ -640,28 +640,6 @@ def empty_state(icon: str, title: str, hint: str):
     )
 
 
-def mdb_metric_strip(items: list):
-    """
-    Tira compacta de métricas (label · valor · cor) — para o painel Real Time.
-    items = [{"label": str, "value": str, "color": "#hex" (opcional)}]
-    """
-    tiles = ""
-    for it in items:
-        col = it.get("color", "#E3FCF7")
-        tiles += (
-            f'<div style="flex:1 1 120px;min-width:120px;background:#002235;'
-            f'border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:12px 14px;">'
-            f'<div style="font-size:9px;color:#3D5A6C;text-transform:uppercase;letter-spacing:1.2px;'
-            f'font-family:\'Plus Jakarta Sans\',sans-serif;margin-bottom:5px;">{it["label"]}</div>'
-            f'<div style="font-size:18px;font-weight:700;color:{col};'
-            f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">{it["value"]}</div></div>'
-        )
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 18px;">{tiles}</div>',
-        unsafe_allow_html=True,
-    )
-
-
 def load_chart_fig(series: dict, height: int = 320):
     """Constrói o gráfico de carga 24h (CPU% + Queries/s) em dual-axis. Reutilizável."""
     fig = go.Figure()
@@ -738,9 +716,9 @@ with st.sidebar:
     usd_brl = st.number_input("USD/BRL (cotação)", value=5.70, step=0.05, format="%.2f",
                                help="Usado para estimativas de custo em BRL")
     refresh_opt = st.selectbox(
-        "Sync com Atlas (auto-refresh)", ["Off", "30s", "60s", "120s"], index=1,
-        help="O painel re-sincroniza as métricas vivas com o Atlas neste intervalo, "
-             "sem precisar de interação.",
+        "Auto-refresh", ["Off", "30s", "60s", "120s"], index=0,
+        help="Recarrega a lista de clusters e alertas neste intervalo. "
+             "As métricas vivas são buscadas sob demanda nas abas Scale/Health/Chat.",
     )
 
     st.divider()
@@ -881,79 +859,16 @@ def get_series_cached(_client: AtlasClient, project_id: str, cluster_name: str) 
     return _client.get_measurements_series(project_id, pid)
 
 
-@st.cache_data(ttl=25, show_spinner=False)
-def gather_overview(_client: AtlasClient, cluster_keys: tuple, max_clusters: int = 12) -> dict:
-    """
-    Agrega health + métricas vivas de cada cluster para a aba Visão Geral.
-    cluster_keys = tuple de (project_id, cluster_name, status, tier, mongo_version).
-    Cacheado por 90s. Pula clusters pausados. Limitado a max_clusters.
-    """
-    def _last_nonnull(lst):
-        """Último valor não-nulo de uma série (ignora 0 só se quiser; aqui aceita 0)."""
-        for v in reversed(lst or []):
-            if v is not None:
-                return v
-        return None
-
-    out      = []
-    cpus     = []
-    tot_conn = 0
-    tot_ops  = 0
-    for (pid, cname, status, tier, mver) in cluster_keys[:max_clusters]:
-        n_pa = n_sq = 0
-        cpu = conn = ops = None
-        meas = {}
-        if status not in ("PAUSED", "DELETING", "CREATING"):
-            try:
-                primary = _client.get_primary(pid, cname)
-                if primary:
-                    try:
-                        n_pa = len(_client.get_suggested_indexes(pid, primary).get("suggestedIndexes", []))
-                        n_sq = len(_client.get_slow_queries(pid, primary).get("slowQueries", []))
-                    except Exception:
-                        pass
-                    # Métricas vivas (CPU normalizada, janela de 5 min) — igual ao Real Time
-                    m = _client.get_measurements(pid, primary)
-                    if m and "error" not in m:
-                        meas = m
-                        cpu  = m.get("cpu_pct", 0)
-                        conn = m.get("connections", 0)
-                        ops  = round(m.get("ops_query", 0) + m.get("ops_insert", 0)
-                                     + m.get("ops_update", 0) + m.get("ops_delete", 0), 1)
-                        cpus.append(cpu)
-                        tot_conn += conn
-                        tot_ops  += ops
-            except Exception:
-                pass
-        hs = calculate_health_score(status, n_pa, n_sq, mver)
-        out.append({
-            "name": cname, "status": status, "tier": tier, "mver": mver,
-            "n_pa": n_pa, "n_sq": n_sq, "pid": pid,
-            "score": hs["score"], "grade": hs["grade"], "color": hs["color"],
-            "cpu": cpu, "conn": conn, "ops": ops, "meas": meas,
-        })
-    org_health = round(sum(c["score"] for c in out) / len(out)) if out else 0
-    return {
-        "clusters":      out,
-        "org_health":    org_health,
-        "avg_cpu":       round(sum(cpus) / len(cpus), 1) if cpus else None,
-        "total_conn":    tot_conn if cpus else None,   # None se nenhuma métrica disponível
-        "total_ops":     round(tot_ops, 1) if cpus else None,
-        "active_metrics": len(cpus),
-    }
-
-
 with st.spinner("🍃 Conectando ao MongoDB Atlas…"):
     all_clusters, load_error = load_all_clusters(client)
 
 
-# ── Auto-refresh real (sync contínuo com o Atlas, sem interação) ───────────────
+# ── Auto-refresh (recarrega lista de clusters + alertas, sem interação) ────────
 REFRESH_INTERVALS = {"30s": 30, "60s": 60, "120s": 120}
 
 def _resync_live_metrics():
-    """Invalida só os caches de métricas vivas — re-busca do Atlas no próximo render.
-    Mantém a lista de clusters cacheada (muda raramente, evita rate-limit)."""
-    for fn in (gather_overview, get_measurements_cached, get_series_cached, count_open_alerts):
+    """Invalida os caches de dados para re-buscar do Atlas no próximo render."""
+    for fn in (load_all_clusters, get_measurements_cached, get_series_cached, count_open_alerts):
         try:
             fn.clear()
         except Exception:
@@ -1206,126 +1121,77 @@ def mdb_section_header(title: str, badge: str = "", badge_color: str = "green", 
 # TAB 0 — VISÃO GERAL (dashboard executivo, estilo MongoDB Atlas)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_overview:
-    mdb_section_header("Visão Geral", badge="Live", badge_color="green",
-                       sub=f"organização · {datetime.now().strftime('%H:%M:%S')}")
+    mdb_section_header("Visão Geral", badge="Organização", badge_color="green",
+                       sub=f"atualizado {datetime.now().strftime('%H:%M:%S')}")
     if not all_clusters:
         st.warning("Nenhum cluster encontrado. Verifique as permissões da API Key.")
     else:
-        _df_ov   = pd.DataFrame(all_clusters)
-        _keys    = tuple(
-            (c["project_id"], c["cluster_name"], c["status"], c["tier"], c["mongo_version"])
-            for c in all_clusters
-        )
-        with st.spinner("🍃 Coletando métricas vivas da frota…"):
-            ov = gather_overview(client, _keys)
-
+        # Tudo aqui vem da lista de clusters já carregada (sem chamadas extras à API).
+        # Métricas vivas (CPU, conexões, etc.) ficam sob demanda nas abas Scale/Health/Chat.
+        _df_ov     = pd.DataFrame(all_clusters)
         _alerts_ov = count_open_alerts(client, tuple(_df_ov["project_id"].unique()))
         _cost_brl  = sum(AtlasClient.estimate_cost(c["tier"], usd_brl)["brl"] for c in all_clusters)
+        _cost_usd  = sum(AtlasClient.estimate_cost(c["tier"], usd_brl)["usd"] for c in all_clusters)
         _idle      = len(_df_ov[_df_ov["status"] == "IDLE"])
+        _dedic     = _df_ov[~_df_ov["tier"].isin(["Free/Shared"])]
+        _top_tier  = _dedic["tier"].value_counts().index[0] if len(_dedic) else "—"
 
-        # ── KPI row — números grandes "ao vivo" ──
-        _oh = ov["org_health"]
-        _oh_color = "green" if _oh >= 75 else "yellow" if _oh >= 50 else "red"
+        # ── KPI row — só métricas estáticas (estrutura da frota) ──
         mdb_kpi_row([
-            {"label": "Clusters Ativos", "value": f"{_idle}/{len(_df_ov)}",
-             "delta": "online" if _idle == len(_df_ov) else f"{len(_df_ov)-_idle} offline",
+            {"label": "Total Clusters", "value": str(len(_df_ov)), "color": "green"},
+            {"label": "Projetos",       "value": str(_df_ov["project_name"].nunique()), "color": "blue"},
+            {"label": "Ativos (IDLE)",  "value": f"{_idle}/{len(_df_ov)}",
+             "delta": "todos online" if _idle == len(_df_ov) else f"{len(_df_ov)-_idle} offline",
              "delta_type": "up" if _idle == len(_df_ov) else "warn",
              "color": "green" if _idle == len(_df_ov) else "yellow"},
-            {"label": "Health da Org", "value": f"{_oh}%",
-             "delta": "saudável" if _oh >= 75 else "requer atenção",
-             "delta_type": "up" if _oh >= 75 else "warn", "color": _oh_color},
-            {"label": "CPU Média", "value": f"{ov['avg_cpu']}%" if ov["avg_cpu"] is not None else "—",
-             "delta_type": "down" if (ov["avg_cpu"] or 0) >= 75 else "",
-             "color": "red" if (ov["avg_cpu"] or 0) >= 75 else "teal"},
-            {"label": "Conexões",
-             "value": f"{ov['total_conn']:,}".replace(",", ".") if ov["total_conn"] is not None else "—",
-             "color": "blue"},
+            {"label": "Tier + comum",   "value": _top_tier, "color": "teal"},
             {"label": "Custo/Mês", "value": f"R$ {_cost_brl:,.0f}".replace(",", "."),
-             "delta": f"≈ USD {sum(AtlasClient.estimate_cost(c['tier'], usd_brl)['usd'] for c in all_clusters):,}".replace(",", "."),
-             "color": "green"},
+             "delta": f"≈ USD {_cost_usd:,}".replace(",", "."), "color": "green"},
             {"label": "Alertas", "value": str(_alerts_ov),
              "delta": "✓ nenhum" if _alerts_ov == 0 else f"↑ {_alerts_ov} abertos",
              "delta_type": "up" if _alerts_ov == 0 else "down",
              "color": "green" if _alerts_ov == 0 else "yellow"},
         ])
 
-        # ── Frota (esquerda) + Carga 24h (direita) ──
-        col_fleet, col_load = st.columns([1, 1])
+        # ── Frota de Clusters (cards estáticos) + distribuição ──
+        col_fleet, col_dist = st.columns([3, 2])
 
         with col_fleet:
             mdb_section_header("Frota de Clusters", badge=f"{len(all_clusters)}", badge_color="blue")
-            for c in ov["clusters"]:
+            for c in all_clusters:
                 dot = {"IDLE": "#00ED64", "PAUSED": "#FACC15"}.get(c["status"], "#38BDF8")
-                grade_c = c["color"]
-                _m = c.get("meas") or {}
-                if c["cpu"] is not None:
-                    sub = f'CPU {c["cpu"]}% · {_m.get("memory_used_gb", 0)}GB · {c["conn"]} conn'
-                else:
-                    sub = "métricas n/d"
                 st.markdown(
                     f'<div style="background:#002235;border:1px solid rgba(255,255,255,0.06);'
-                    f'border-left:3px solid {grade_c};border-radius:6px;padding:12px 16px;margin-bottom:8px;'
+                    f'border-left:3px solid {dot};border-radius:6px;padding:12px 16px;margin-bottom:8px;'
                     f'display:flex;align-items:center;gap:12px;">'
                     f'<span style="width:8px;height:8px;border-radius:50%;background:{dot};'
                     f'box-shadow:0 0 8px {dot};flex-shrink:0;"></span>'
                     f'<div style="flex:1;min-width:0;">'
                     f'<div style="font-size:13px;font-weight:700;color:#E3FCF7;'
-                    f'font-family:\'IBM Plex Mono\',monospace;">{c["name"]}</div>'
+                    f'font-family:\'IBM Plex Mono\',monospace;">{c["cluster_name"]}</div>'
                     f'<div style="font-size:11px;color:#89979B;margin-top:2px;">'
-                    f'{c["tier"]} · {sub} · MongoDB {c["mver"]}</div></div>'
+                    f'{c["tier"]} · {pretty_region(c["region"])} · MongoDB {c["mongo_version"]}</div></div>'
                     f'<div style="text-align:right;flex-shrink:0;">'
-                    f'<div style="font-size:18px;font-weight:800;color:{grade_c};'
-                    f'font-family:\'IBM Plex Mono\',monospace;line-height:1;">{c["grade"]}</div>'
-                    f'<div style="font-size:9px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;">'
-                    f'{c["score"]}/100</div></div>'
+                    f'<div style="font-size:11px;font-weight:700;color:{dot};'
+                    f'font-family:\'IBM Plex Mono\',monospace;">{c["status"]}</div>'
+                    f'<div style="font-size:9px;color:#3D5A6C;font-family:\'IBM Plex Mono\',monospace;'
+                    f'margin-top:2px;">{c["cluster_type"]}</div></div>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-        with col_load:
-            # Primeiro cluster ativo para o gráfico de carga
-            _active = next((c for c in all_clusters
-                            if c["status"] not in ("PAUSED", "DELETING", "CREATING")), None)
-            if _active:
-                mdb_section_header("Carga 24h", badge=_active["cluster_name"], badge_color="green")
-                _s = get_series_cached(client, _active["project_id"], _active["cluster_name"])
-                if _s and "error" not in _s and _s.get("timestamps"):
-                    show_chart(load_chart_fig(_s, height=320))
-                else:
-                    st.caption("Sem dados históricos disponíveis para este cluster.")
+        with col_dist:
+            mdb_section_header("Distribuição", badge="por tier", badge_color="teal")
+            if len(_dedic) >= 1:
+                _tc = _dedic["tier"].value_counts()
+                fig_dist = px.bar(x=_tc.values, y=_tc.index, orientation="h",
+                                  labels={"x": "Clusters", "y": ""},
+                                  color_discrete_sequence=["#00ED64"])
+                show_chart(plotly_dark(fig_dist, height=max(180, 60 * len(_tc))))
             else:
-                mdb_section_header("Carga 24h", badge="—", badge_color="yellow")
-                st.caption("Nenhum cluster ativo para exibir métricas.")
-
-        # ── Métricas em Tempo Real (cluster ativo em destaque) ──
-        _feat = next((c for c in ov["clusters"] if c.get("meas")), None)
-        if _feat:
-            m = _feat["meas"]
-            mdb_section_header("Métricas em Tempo Real", badge=_feat["name"], badge_color="green",
-                               sub="janela de 5 min")
-            _cpu  = m.get("cpu_pct", 0)
-            _qt   = m.get("query_targeting", 0)
-            mdb_metric_strip([
-                {"label": "CPU",          "value": f"{_cpu}%",
-                 "color": "#F87171" if _cpu >= 75 else "#FACC15" if _cpu >= 50 else "#00ED64"},
-                {"label": "Memória",      "value": f"{m.get('memory_used_gb',0)}/{m.get('mem_total_gb',0)}GB",
-                 "color": "#38BDF8"},
-                {"label": "Conexões",     "value": f"{m.get('connections',0)}", "color": "#00ED64"},
-                {"label": "Disk IOPS R/W","value": f"{m.get('disk_iops_read',0):.0f}/{m.get('disk_iops_write',0):.0f}",
-                 "color": "#89979B"},
-                {"label": "Disk Lat R/W", "value": f"{m.get('disk_lat_read',0):.0f}/{m.get('disk_lat_write',0):.0f}ms",
-                 "color": "#89979B"},
-                {"label": "Rede In/Out",  "value": f"{m.get('net_in_mb',0):.1f}/{m.get('net_out_mb',0):.1f}MB",
-                 "color": "#38BDF8"},
-                {"label": "Queries/s",    "value": f"{m.get('ops_query',0):.0f}", "color": "#00ED64"},
-                {"label": "Inserts/s",    "value": f"{m.get('ops_insert',0):.0f}", "color": "#00ED64"},
-                {"label": "Updates/s",    "value": f"{m.get('ops_update',0):.0f}", "color": "#00ED64"},
-                {"label": "Query Target.","value": f"{_qt:.1f}x",
-                 "color": "#F87171" if _qt >= 100 else "#FACC15" if _qt >= 10 else "#00ED64"},
-            ])
-            if _qt >= 100:
-                st.caption("⚠️ **Query Targeting alto** — muitos documentos escaneados por resultado "
-                           "retornado. Forte indício de índices faltando (veja Performance Advisor).")
+                st.caption("Sem clusters dedicados para distribuir.")
+            st.caption("💡 Métricas vivas (CPU, conexões, IOPS) ficam sob demanda nas abas "
+                       "**Scale**, **Health Score** e **AI Chat** — para manter a Visão Geral rápida.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
