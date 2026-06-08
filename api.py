@@ -210,7 +210,89 @@ def health(project_id: str, cluster_name: str, status: str = "", mongo_version: 
         except Exception:
             pass
     hs = calculate_health_score(status, n_pa, n_sq, mongo_version)
-    return {**hs, "n_pa": n_pa, "n_sq": n_sq}
+
+    # Breakdown por componente (quanto cada um contribui / desconta)
+    try:
+        major = int(str(mongo_version).split(".")[0])
+    except Exception:
+        major = 0
+    status_pts = 20 if status == "IDLE" else (10 if status == "PAUSED" else 0)
+    components = [
+        {"label": "Status do Cluster", "earned": status_pts, "max": 20,
+         "detail": "IDLE = saudável" if status == "IDLE" else f"Status {status}",
+         "ok": status == "IDLE"},
+        {"label": "Saúde de Índices", "earned": max(0, 30 - min(n_pa * 5, 30)), "max": 30,
+         "detail": "Nenhum índice sugerido pelo PA" if n_pa == 0 else f"{n_pa} índice(s) sugerido(s) — faltam índices",
+         "ok": n_pa == 0},
+        {"label": "Saúde de Queries", "earned": max(0, 30 - min(n_sq * 2, 30)), "max": 30,
+         "detail": "Sem slow queries" if n_sq == 0 else f"{n_sq} slow quer{'y' if n_sq == 1 else 'ies'} registradas",
+         "ok": n_sq == 0},
+        {"label": "Versão do MongoDB", "earned": 10 if major >= 7 else 0, "max": 10,
+         "detail": f"MongoDB {mongo_version}" + ("" if major >= 7 else " — desatualizada (<7)"),
+         "ok": major >= 7},
+        {"label": "Base", "earned": 10, "max": 10, "detail": "pontuação base", "ok": True},
+    ]
+    # Recomendações acionáveis para melhorar a nota
+    tips = []
+    if n_pa > 0:
+        tips.append({"gain": min(n_pa * 5, 30), "text": f"Crie os {n_pa} índice(s) sugeridos no **Performance Advisor** — recupera até +{min(n_pa*5,30)} pts."})
+    if n_sq > 0:
+        tips.append({"gain": min(n_sq * 2, 30), "text": f"Otimize as {n_sq} slow queries (veja o **Query Profiler**) — elimine COLLSCANs para recuperar até +{min(n_sq*2,30)} pts."})
+    if major and major < 7:
+        tips.append({"gain": 10, "text": f"Atualize o MongoDB {mongo_version} → 7.0+ — recupera +10 pts e melhora performance."})
+    if status == "PAUSED":
+        tips.append({"gain": 10, "text": "Retome (resume) o cluster pausado — recupera +10 pts."})
+    if not tips:
+        tips.append({"gain": 0, "text": "Cluster já está no topo — nenhuma ação necessária. 🎉"})
+
+    return {**hs, "n_pa": n_pa, "n_sq": n_sq, "components": components, "tips": tips}
+
+
+@app.get("/api/finops")
+def finops():
+    """Avalia eficiência de custo (custo vs utilização real de CPU) por cluster."""
+    client = get_client()
+    out = []
+    try:
+        projects = client.get_projects()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    for proj in projects:
+        try:
+            clusters = client.get_clusters(proj["id"])
+        except Exception:
+            continue
+        for c in clusters:
+            try:
+                rc = c["replicationSpecs"][0]["regionConfigs"][0]
+                tier = rc["electableSpecs"]["instanceSize"]
+            except (KeyError, IndexError, TypeError):
+                tier = "Free/Shared"
+            if c.get("paused") or tier == "Free/Shared":
+                cpu = None
+            else:
+                pid = client.get_primary(proj["id"], c["name"])
+                m = client.get_measurements(proj["id"], pid) if pid else {}
+                cpu = m.get("cpu_pct") if m and "error" not in m else None
+            cost = AtlasClient.estimate_cost(tier, USD_BRL)
+            # Veredito de eficiência: custo alto + CPU baixa = desperdício
+            verdict, color = "sem dados", "muted"
+            if cpu is not None:
+                if cpu < 15 and cost["usd"] >= 389:      # M30+
+                    verdict, color = "subutilizado — possível economia", "yellow"
+                elif cpu > 75:
+                    verdict, color = "saturado — avaliar scale up", "red"
+                else:
+                    verdict, color = "saudável — bom uso do tier", "green"
+            out.append({
+                "project": proj["name"], "cluster": c["name"], "tier": tier,
+                "cpu": cpu, "cost_usd": cost["usd"], "cost_brl": cost["brl"],
+                "verdict": verdict, "color": color,
+            })
+    total_usd = sum(c["cost_usd"] for c in out)
+    waste = [c for c in out if c["color"] == "yellow"]
+    return {"clusters": out, "total_usd": total_usd,
+            "potential_savings_usd": sum(c["cost_usd"] for c in waste)}
 
 
 @app.get("/api/cluster/{project_id}/{cluster_name}/scaling")
@@ -238,6 +320,38 @@ def scale(project_id: str, cluster_name: str, body: ScaleBody):
 class IndexBody(BaseModel):
     namespace: str
     index_keys: list
+
+class ExplainBody(BaseModel):
+    namespace: str
+    filter: dict = {}
+
+@app.post("/api/explain")
+def explain_query(body: ExplainBody):
+    """Roda explain('executionStats') real via pymongo no filtro informado."""
+    uri = os.getenv("MONGODB_URI", "")
+    if not uri:
+        raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
+    try:
+        from pymongo import MongoClient
+        parts = body.namespace.split(".", 1)
+        db_name, coll = parts[0], (parts[1] if len(parts) > 1 else parts[0])
+        mc = MongoClient(uri, serverSelectionTimeoutMS=6000)
+        plan = mc[db_name].command("explain", {"find": coll, "filter": body.filter},
+                                   verbosity="executionStats")
+        mc.close()
+        exe = plan.get("executionStats", {})
+        win = plan.get("queryPlanner", {}).get("winningPlan", {})
+        return {
+            "stage": win.get("stage") or win.get("inputStage", {}).get("stage", "—"),
+            "docs_examined": exe.get("totalDocsExamined", "—"),
+            "keys_examined": exe.get("totalKeysExamined", "—"),
+            "n_returned": exe.get("nReturned", "—"),
+            "exec_ms": exe.get("executionTimeMillis", "—"),
+            "index_used": win.get("inputStage", {}).get("indexName") or win.get("indexName") or "COLLSCAN (sem índice)",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
 
 @app.post("/api/index")
 def create_index(body: IndexBody):
@@ -282,7 +396,8 @@ class ChatBody(BaseModel):
 
 @app.post("/api/chat")
 def chat(body: ChatBody):
-    system = ""
+    # SEMPRE há system prompt (âncora MongoDB Atlas) — sem ele o modelo responde genérico.
+    system = build_chat_system_prompt()
     if body.project_id and body.cluster_name:
         client = get_client()
         pid = client.get_primary(body.project_id, body.cluster_name)

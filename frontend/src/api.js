@@ -17,6 +17,8 @@ export const getHealth      = (pid, name, status, mv) => http.get(`${c(pid, name
 export const getScaling     = (pid, name, tier) => http.get(`${c(pid, name)}/scaling`, { params: { tier } }).then(r => r.data)
 export const scaleCluster   = (pid, name, newTier) => http.post(`${c(pid, name)}/scale`, { new_tier: newTier }).then(r => r.data)
 export const createIndex    = (namespace, indexKeys) => http.post('/index', { namespace, index_keys: indexKeys }).then(r => r.data)
+export const getFinops      = () => http.get('/finops').then(r => r.data)
+export const explainQuery   = (namespace, filter) => http.post('/explain', { namespace, filter }).then(r => r.data)
 
 // Streaming helpers (fetch para ler chunks de texto)
 export async function* streamChat(messages, project_id, cluster_name) {
