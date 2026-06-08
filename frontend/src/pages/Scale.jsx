@@ -71,7 +71,7 @@ export default function Scale({ clusters, config }) {
       )}
 
       <Section title="Carga 24h" badge={sel.cluster_name} />
-      <MiniChart series={series} height={260} />
+      <MiniChart series={series} height={150} />
 
       {/* ── Simulador de tier com custo ── */}
       <Section title="Simular Mudança de Tier" />

@@ -48,11 +48,11 @@ export function Empty({ icon, title, hint }) {
   )
 }
 
-// Mini gráfico SVG (CPU área + queries linha) — leve, sem libs externas
-export function MiniChart({ series, height = 300 }) {
+// Mini gráfico SVG (CPU área + queries linha) — leve, compacto, altura fixa
+export function MiniChart({ series, height = 160 }) {
   if (!series || series.error || !series.timestamps || series.timestamps.length === 0)
-    return <div className="empty" style={{ padding: 28 }}>Sem dados históricos disponíveis.</div>
-  const w = 560, h = height, pad = 30
+    return <div className="empty" style={{ padding: 22 }}>Sem dados históricos disponíveis.</div>
+  const w = 1000, h = 300, pad = 6   // viewBox interno; render usa height fixo
   const cpu = series.cpu || []
   const q = series.ops_query || []
   const n = cpu.length
@@ -65,15 +65,20 @@ export function MiniChart({ series, height = 300 }) {
   const areaCpu = `${lineCpu} L${x(n - 1)},${h - pad} L${x(0)},${h - pad} Z`
   const lineQ = q.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${yQ(v)}`).join(' ')
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} style={{ width: '100%', background: '#00271C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }}>
-      {[0.25, 0.5, 0.75, 1].map((g, i) => (
-        <line key={i} x1={pad} x2={w - pad} y1={pad + g * (h - 2 * pad)} y2={pad + g * (h - 2 * pad)} stroke="rgba(255,255,255,0.05)" />
-      ))}
-      <path d={areaCpu} fill="rgba(0,237,100,0.10)" />
-      <path d={lineCpu} fill="none" stroke="#00ED64" strokeWidth="2" />
-      <path d={lineQ} fill="none" stroke="#0498EC" strokeWidth="2" />
-      <text x={pad} y={16} fill="#00ED64" fontSize="11" fontFamily="monospace">CPU %  (máx {maxCpu.toFixed(0)})</text>
-      <text x={w - pad} y={16} fill="#0498EC" fontSize="11" fontFamily="monospace" textAnchor="end">Queries/s  (máx {maxQ.toFixed(0)})</text>
-    </svg>
+    <div style={{ background: '#00271C', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, padding: '10px 12px' }}>
+      <div className="row" style={{ gap: 18, marginBottom: 6, fontSize: 11 }}>
+        <span className="mono" style={{ color: '#00ED64' }}>● CPU % (máx {maxCpu.toFixed(0)})</span>
+        <span className="mono" style={{ color: '#0498EC' }}>● Queries/s (máx {maxQ.toFixed(0)})</span>
+        <span className="mono" style={{ color: '#3D5A6C', marginLeft: 'auto' }}>últimas 24h</span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: '100%', height: `${height}px`, display: 'block' }}>
+        {[0.33, 0.66, 1].map((g, i) => (
+          <line key={i} x1={pad} x2={w - pad} y1={g * (h - pad)} y2={g * (h - pad)} stroke="rgba(255,255,255,0.05)" />
+        ))}
+        <path d={areaCpu} fill="rgba(0,237,100,0.10)" />
+        <path d={lineCpu} fill="none" stroke="#00ED64" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+        <path d={lineQ} fill="none" stroke="#0498EC" strokeWidth="3" vectorEffect="non-scaling-stroke" />
+      </svg>
+    </div>
   )
 }
