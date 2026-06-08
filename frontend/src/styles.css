@@ -1,0 +1,81 @@
+/* styles.css — base MongoDB Atlas dark */
+:root {
+  --mdb-bg: #001E2B;        /* Atlas void */
+  --mdb-surface: #023430;
+  --mdb-card: #00271C;
+  --mdb-green: #00ED64;
+  --mdb-text: #E3FCF7;
+  --mdb-sub: #889397;
+  --mdb-border: rgba(0,237,100,0.14);
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--mdb-bg);
+  color: var(--mdb-text);
+  font-family: 'Euclid Circular A', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.app-shell { display: flex; min-height: 100vh; }
+
+/* Sidebar */
+.sidenav {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--mdb-surface);
+  border-right: 1px solid var(--mdb-border);
+  padding: 22px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidenav-brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 20px; }
+.sidenav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 6px;
+  color: var(--mdb-sub); font-size: 14px; font-weight: 500;
+  cursor: pointer; border: none; background: transparent; text-align: left; width: 100%;
+  transition: background .12s, color .12s;
+}
+.sidenav-item:hover { background: rgba(255,255,255,0.04); color: var(--mdb-text); }
+.sidenav-item.active { background: rgba(0,237,100,0.10); color: var(--mdb-green); }
+.sidenav-section { font-size: 10px; text-transform: uppercase; letter-spacing: 1.4px; color: #3D5A6C; padding: 16px 12px 6px; font-weight: 700; }
+
+/* Main */
+.main { flex: 1; padding: 28px 36px; overflow-y: auto; max-width: 1500px; }
+.page-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 22px; }
+
+/* KPI grid */
+.kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin-bottom: 26px; }
+.kpi { background: var(--mdb-card); border: 1px solid var(--mdb-border); border-top: 3px solid var(--mdb-green); border-radius: 0 0 8px 8px; padding: 16px 18px; }
+.kpi-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.3px; color: #5C6C75; font-weight: 700; margin-bottom: 8px; }
+.kpi-value { font-size: 26px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.kpi-delta { font-size: 11px; color: #889397; margin-top: 6px; }
+
+/* Fleet card */
+.fleet-card { display: flex; align-items: center; gap: 12px; background: var(--mdb-card); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 12px 16px; margin-bottom: 8px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mono { font-family: 'Source Code Pro', 'IBM Plex Mono', monospace; }
+
+.two-col { display: grid; grid-template-columns: 3fr 2fr; gap: 24px; }
+.section-title { font-size: 11px; text-transform: uppercase; letter-spacing: 1.6px; color: var(--mdb-sub); font-weight: 700; margin: 24px 0 14px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+
+/* Simple table */
+table.mdb { width: 100%; border-collapse: collapse; background: var(--mdb-card); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; overflow: hidden; }
+table.mdb th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #5C6C75; padding: 10px 14px; background: var(--mdb-surface); border-bottom: 1px solid var(--mdb-border); }
+table.mdb td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+table.mdb tr:hover td { background: rgba(0,237,100,0.04); }
+
+.empty { text-align: center; padding: 40px; border: 1px dashed var(--mdb-border); border-radius: 10px; background: var(--mdb-card); color: var(--mdb-sub); }
+.row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.spacer { flex: 1; }
+
+/* Chat */
+.chat-msg { background: var(--mdb-card); border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+.chat-msg.user { border-left: 3px solid #5C6C75; }
+.chat-msg.assistant { border-left: 3px solid var(--mdb-green); }
+pre { background: #001016; border: 1px solid var(--mdb-border); border-radius: 6px; padding: 12px; overflow-x: auto; color: var(--mdb-green); font-size: 12px; }
