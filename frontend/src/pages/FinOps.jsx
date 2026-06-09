@@ -15,7 +15,9 @@ export default function FinOps({ clusters }) {
 
   useEffect(() => { getFinops().then(setData).catch(() => setData({ clusters: [], total_usd: 0, potential_savings_usd: 0 })).finally(() => setBusy(false)) }, [])
 
+  // Totais vêm direto dos clusters (instantâneo) — independem do /finops lento
   const totalBrl = clusters.reduce((s, c) => s + c.cost_brl, 0)
+  const totalUsd = clusters.reduce((s, c) => s + c.cost_usd, 0)
   const avg = clusters.length ? totalBrl / clusters.length : 0
   const measured = data?.clusters.filter(c => c.cpu != null) || []
   const overprov = measured.filter(c => c.color === 'yellow')
@@ -30,11 +32,11 @@ export default function FinOps({ clusters }) {
     <>
       <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>FinOps</H1></div>
       <KpiGrid>
-        <Kpi label="Total USD/Mês" value={`$${fmt(data?.total_usd || 0)}`} />
+        <Kpi label="Total USD/Mês" value={`$${fmt(totalUsd)}`} />
         <Kpi label="Total BRL/Mês" value={`R$ ${fmt(totalBrl)}`} color="#00A35C" />
         <Kpi label="Média/Cluster" value={`R$ ${fmt(avg)}`} color="#0498EC" />
-        <Kpi label="Economia Potencial" value={`$${fmt(data?.potential_savings_usd || 0)}`}
-             delta={overprov.length ? `${overprov.length} subutilizado(s)` : 'frota otimizada'}
+        <Kpi label="Economia Potencial" value={busy ? '…' : `$${fmt(data?.potential_savings_usd || 0)}`}
+             delta={busy ? 'avaliando…' : overprov.length ? `${overprov.length} subutilizado(s)` : 'frota otimizada'}
              color={overprov.length ? '#FFC010' : '#00ED64'} />
       </KpiGrid>
 
