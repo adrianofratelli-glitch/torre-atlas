@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { H1 } from '@leafygreen-ui/typography'
 import Button from '@leafygreen-ui/button'
 import TextInput from '@leafygreen-ui/text-input'
@@ -15,6 +15,24 @@ const SUGGESTIONS = [
   'Explique o Bucket Pattern para séries temporais financeiras',
   'Como o WiredTiger usa o cache e por que isso afeta a performance?',
 ]
+
+// memo: durante o streaming só a última bolha muda — as anteriores não
+// re-parseiam o Markdown a cada chunk recebido
+const Bubble = memo(function Bubble({ m }) {
+  return (
+    <div className={`bubble ${m.role}`}>
+      <div className="bubble-avatar">{m.role === 'user' ? '🧑' : <Leaf size={18} />}</div>
+      <div className="bubble-body">
+        <div className="bubble-name">{m.role === 'user' ? 'Você' : 'Claude'}</div>
+        {m.role === 'assistant'
+          ? (m.content
+              ? <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>
+              : <span style={{ color: '#00ED64' }}>▌ pensando…</span>)
+          : <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>}
+      </div>
+    </div>
+  )
+})
 
 export default function Chat({ clusters, config }) {
   const [ctx, setCtx] = useState(null)
@@ -102,25 +120,15 @@ export default function Chat({ clusters, config }) {
       )}
 
       <div style={{ marginBottom: 18 }}>
-        {msgs.map((m, i) => (
-          <div key={i} className={`bubble ${m.role}`}>
-            <div className="bubble-avatar">{m.role === 'user' ? '🧑' : <Leaf size={18} />}</div>
-            <div className="bubble-body">
-              <div className="bubble-name">{m.role === 'user' ? 'Você' : 'Claude'}</div>
-              {m.role === 'assistant'
-                ? (m.content
-                    ? <div className="md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown></div>
-                    : <span style={{ color: '#00ED64' }}>▌ pensando…</span>)
-                : <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>}
-            </div>
-          </div>
-        ))}
+        {msgs.map((m, i) => <Bubble key={i} m={m} />)}
         <div ref={endRef} />
       </div>
 
       <div className="row chat-input-bar">
+        {/* label oculto: a validação do LeafyGreen exige label/aria-labelledby (não aceita aria-label) */}
+        <span id="chat-input-label" style={{ display: 'none' }}>Mensagem para o chat</span>
         <div style={{ flex: 1 }}>
-          <TextInput aria-label="Mensagem" placeholder="Pergunte sobre MongoDB Atlas, performance, indexação…"
+          <TextInput aria-labelledby="chat-input-label" placeholder="Pergunte sobre MongoDB Atlas, performance, indexação…"
             value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') send(input) }} darkMode />
         </div>

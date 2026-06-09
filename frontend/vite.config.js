@@ -18,4 +18,23 @@ export default defineConfig({
     strictPort: false,
     proxy: { '/api': `http://localhost:${API_PORT}` },
   },
+  preview: {
+    port: Number(WEB_PORT),
+    strictPort: false,
+    proxy: { '/api': `http://localhost:${API_PORT}` },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Separa as libs pesadas em chunks próprios — melhora cache e elimina
+        // o warning de chunk >500 kB do bundle único
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('@leafygreen-ui') || id.includes('@lg-')) return 'leafygreen'
+          if (/node_modules\/(react-markdown|remark-|rehype-|micromark|mdast-|unified|unist-|hast-|vfile|bail|trough|devlop|property-information|space-separated-tokens|comma-separated-tokens|character-entities|decode-named-character-reference|trim-lines|html-url-attributes|estree-util|style-to-(js|object)|inline-style-parser|zwitch|longest-streak|ccount|markdown-table|escape-string-regexp)/.test(id)) return 'markdown'
+          return 'vendor'
+        },
+      },
+    },
+  },
 })

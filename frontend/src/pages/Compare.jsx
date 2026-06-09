@@ -10,15 +10,18 @@ export default function Compare({ clusters }) {
   const [b, setB] = useState(clusters[1] || clusters[0])
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
 
   const cmp = async () => {
-    setBusy(true)
+    setBusy(true); setErr(null)
     try {
       const [ha, hb] = await Promise.all([
         getHealth(a.project_id, a.cluster_name, a.status, a.mongo_version),
         getHealth(b.project_id, b.cluster_name, b.status, b.mongo_version),
       ])
       setData({ a: { ...a, ...ha }, b: { ...b, ...hb } })
+    } catch (e) {
+      setErr(e?.response?.data?.detail || e.message)
     } finally { setBusy(false) }
   }
 
@@ -46,12 +49,31 @@ export default function Compare({ clusters }) {
     ['MongoDB', data.a.mongo_version, data.b.mongo_version, 'high', v => v],
   ] : []
 
+  // Compara versões segmento a segmento ("7.0.28" vs "8.0.5") — parseFloat
+  // descartaria o patch e empataria "7.0.2" com "7.0.28"
+  const cmpVersion = (va, vb) => {
+    const sa = String(va).split('.').map(Number), sb = String(vb).split('.').map(Number)
+    for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
+      const d = (sa[i] || 0) - (sb[i] || 0)
+      if (d !== 0) return d
+    }
+    return 0
+  }
+
   const winner = (va, vb, better) => {
     if (better === null || va === vb) return 0
-    const na = parseFloat(va), nb = parseFloat(vb)
-    const a_ = isNaN(na) ? va : na, b_ = isNaN(nb) ? vb : nb
-    if (better === 'high') return a_ > b_ ? -1 : 1
-    return a_ < b_ ? -1 : 1   // low is better
+    const isVersion = v => /^\d+(\.\d+)+$/.test(String(v))
+    let diff
+    if (isVersion(va) && isVersion(vb)) {
+      diff = cmpVersion(va, vb)
+    } else {
+      const na = parseFloat(va), nb = parseFloat(vb)
+      const a_ = isNaN(na) ? va : na, b_ = isNaN(nb) ? vb : nb
+      diff = a_ > b_ ? 1 : a_ < b_ ? -1 : 0
+    }
+    if (diff === 0) return 0
+    if (better === 'high') return diff > 0 ? -1 : 1
+    return diff < 0 ? -1 : 1   // low is better
   }
 
   // Resumo: quem venceu mais métricas
@@ -66,6 +88,8 @@ export default function Compare({ clusters }) {
         <Sel v={b} set={setB} label="🟠 Cluster B" />
         <Button variant="primary" onClick={cmp} disabled={busy}>{busy ? 'Comparando…' : '🔍 Comparar'}</Button>
       </div>
+
+      {err && <Banner variant="danger" style={{ marginBottom: 16 }}>{err}</Banner>}
 
       {data && (
         <>
