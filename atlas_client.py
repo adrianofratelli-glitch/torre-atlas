@@ -151,6 +151,43 @@ class AtlasClient:
         # Último fallback: primeiro primário disponível
         return f"{primaries[0]['hostname']}:{primaries[0]['port']}"
 
+    # ── Disk / Storage measurements (endpoint /disks/{partition}) ─────────
+    def _disk_metrics(self, project_id: str, process_id: str) -> dict:
+        """Busca IOPS, latência e % de uso de storage da 1ª partição.
+        Endpoint separado do de processo. Best-effort — retorna {} em falha."""
+        try:
+            disks = self._get(f"/groups/{project_id}/processes/{process_id}/disks").get("results", [])
+            if not disks:
+                return {}
+            part = disks[0]["partitionName"]
+            data = self._get(
+                f"/groups/{project_id}/processes/{process_id}/disks/{part}/measurements",
+                params={"granularity": "PT1M", "period": "PT5M", "m": [
+                    "DISK_PARTITION_IOPS_READ", "DISK_PARTITION_IOPS_WRITE",
+                    "DISK_PARTITION_LATENCY_READ", "DISK_PARTITION_LATENCY_WRITE",
+                    "DISK_PARTITION_SPACE_PERCENT_USED",
+                ]},
+            )
+        except Exception:
+            return {}
+
+        def _last(points):
+            for p in reversed(points):
+                if p.get("value") is not None:
+                    return round(p["value"], 2)
+            return 0
+
+        out = {}
+        for m in data.get("measurements", []):
+            n = m.get("name", "")
+            v = _last(m.get("dataPoints", []))
+            if "IOPS_READ" in n:        out["iops_read"]  = v
+            elif "IOPS_WRITE" in n:     out["iops_write"] = v
+            elif "LATENCY_READ" in n:   out["lat_read"]   = v
+            elif "LATENCY_WRITE" in n:  out["lat_write"]  = v
+            elif "SPACE_PERCENT" in n:  out["space_pct"]  = v
+        return out
+
     # ── Hardware Measurements ─────────────────────────────────────────────
     def get_measurements(self, project_id: str, process_id: str) -> dict:
         """
@@ -161,6 +198,9 @@ class AtlasClient:
         Métricas: CPU, Memória, Conexões, Disk IOPS + Latência, Rede,
         Opcounters (query/insert/update/delete/getmore/command) e Query Targeting.
         """
+        # IMPORTANTE: o endpoint de PROCESSO só aceita métricas de sistema/processo.
+        # Métricas DISK_PARTITION_* pertencem ao endpoint /disks/{partition} —
+        # incluí-las aqui retorna 404 e derruba a chamada inteira (zera tudo).
         METRICS = [
             # CPU normalizada (preferida) + fallback não-normalizado
             "SYSTEM_NORMALIZED_CPU_USER", "SYSTEM_NORMALIZED_CPU_KERNEL",
@@ -169,10 +209,6 @@ class AtlasClient:
             "SYSTEM_MEMORY_USED", "SYSTEM_MEMORY_AVAILABLE",
             # Conexões
             "CONNECTIONS",
-            # Disco
-            "DISK_PARTITION_IOPS_READ", "DISK_PARTITION_IOPS_WRITE",
-            "DISK_PARTITION_LATENCY_READ", "DISK_PARTITION_LATENCY_WRITE",
-            "DISK_PARTITION_SPACE_PERCENT_USED",
             # Operações
             "OPCOUNTER_INSERT", "OPCOUNTER_QUERY", "OPCOUNTER_UPDATE",
             "OPCOUNTER_DELETE", "OPCOUNTER_GETMORE", "OPCOUNTER_CMD",
@@ -217,17 +253,20 @@ class AtlasClient:
         mem_avail = result.get("SYSTEM_MEMORY_AVAILABLE", 0)
 
         formatted = {}
+        # SYSTEM_MEMORY_* vem em KB → GB = valor / 1024² (1_048_576)
         formatted["cpu_pct"]          = round((cpu_user or 0) + (cpu_kern or 0), 1)
-        formatted["memory_used_gb"]   = round(mem_used  / 1024, 2) if mem_used  else 0
-        formatted["memory_avail_gb"]  = round(mem_avail / 1024, 2) if mem_avail else 0
-        formatted["mem_total_gb"]     = round((mem_used + mem_avail) / 1024, 1) if (mem_used or mem_avail) else 0
+        formatted["memory_used_gb"]   = round(mem_used  / 1_048_576, 2) if mem_used  else 0
+        formatted["memory_avail_gb"]  = round(mem_avail / 1_048_576, 2) if mem_avail else 0
+        formatted["mem_total_gb"]     = round((mem_used + mem_avail) / 1_048_576, 1) if (mem_used or mem_avail) else 0
         formatted["mem_pct"]          = round(mem_used / (mem_used + mem_avail) * 100, 1) if (mem_used + mem_avail) else 0
         formatted["connections"]      = int(result.get("CONNECTIONS", 0))
-        formatted["disk_iops_read"]   = result.get("DISK_PARTITION_IOPS_READ",  0)
-        formatted["disk_iops_write"]  = result.get("DISK_PARTITION_IOPS_WRITE", 0)
-        formatted["disk_lat_read"]    = result.get("DISK_PARTITION_LATENCY_READ",  0)
-        formatted["disk_lat_write"]   = result.get("DISK_PARTITION_LATENCY_WRITE", 0)
-        formatted["disk_pct"]         = result.get("DISK_PARTITION_SPACE_PERCENT_USED", 0)
+        # Disco/storage vêm do endpoint /disks (best-effort, não derruba se falhar)
+        disk = self._disk_metrics(project_id, process_id)
+        formatted["disk_iops_read"]   = disk.get("iops_read", 0)
+        formatted["disk_iops_write"]  = disk.get("iops_write", 0)
+        formatted["disk_lat_read"]    = disk.get("lat_read", 0)
+        formatted["disk_lat_write"]   = disk.get("lat_write", 0)
+        formatted["disk_pct"]         = disk.get("space_pct", 0)
         formatted["ops_insert"]       = result.get("OPCOUNTER_INSERT", 0)
         formatted["ops_query"]        = result.get("OPCOUNTER_QUERY",  0)
         formatted["ops_update"]       = result.get("OPCOUNTER_UPDATE", 0)
@@ -311,14 +350,17 @@ class AtlasClient:
         if not measurements or "error" in measurements:
             return {"action": "ok", "severity": "low", "reasons": [], "headline": ""}
 
-        cpu   = measurements.get("cpu_pct", 0)
-        conns = measurements.get("connections", 0)
-        iops  = measurements.get("disk_iops_read", 0) + measurements.get("disk_iops_write", 0)
+        cpu      = measurements.get("cpu_pct", 0)
+        conns    = measurements.get("connections", 0)
+        iops     = measurements.get("disk_iops_read", 0) + measurements.get("disk_iops_write", 0)
+        mem_pct  = measurements.get("mem_pct", 0)
+        disk_pct = measurements.get("disk_pct", 0)
         conn_limit = AtlasClient.TIER_CONN_LIMIT.get(tier, 1500)
         conn_pct   = (conns / conn_limit * 100) if conn_limit else 0
 
         reasons, action, severity = [], "ok", "low"
 
+        # ── CPU ──
         if cpu >= 80:
             action, severity = "up", "high"
             reasons.append(f"CPU em **{cpu}%** — acima de 80%, gargalo de processamento")
@@ -326,6 +368,25 @@ class AtlasClient:
             action, severity = "up", "med"
             reasons.append(f"CPU em **{cpu}%** — aproximando do limite (65%+)")
 
+        # ── Memória (pressão de cache WiredTiger) ──
+        if mem_pct >= 90:
+            action, severity = "up", "high"
+            reasons.append(f"Memória em **{mem_pct}%** — working set não cabe na RAM, pressão de cache WiredTiger")
+        elif mem_pct >= 75:
+            if action != "up":
+                action, severity = "up", "med"
+            reasons.append(f"Memória em **{mem_pct}%** — aproximando do limite, risco de page faults em disco")
+
+        # ── Storage (uso de disco) ──
+        if disk_pct >= 85:
+            action, severity = "up", "high"
+            reasons.append(f"Storage em **{disk_pct}%** — risco de esgotar disco; expanda o tier")
+        elif disk_pct >= 70:
+            if action != "up":
+                action, severity = "up", "med"
+            reasons.append(f"Storage em **{disk_pct}%** — planeje expansão de disco")
+
+        # ── Conexões ──
         if conn_pct >= 80:
             action, severity = "up", "high"
             reasons.append(f"Conexões em **{conns}** ({conn_pct:.0f}% do limite do {tier})")
@@ -334,15 +395,18 @@ class AtlasClient:
                 action, severity = "up", "med"
             reasons.append(f"Conexões em **{conns}** ({conn_pct:.0f}% do limite do {tier})")
 
+        # ── Disco I/O ──
         if iops >= 3000 and "_NVME" not in tier:
             if action != "up":
                 action, severity = "up", "med"
             reasons.append(f"Disco em **{iops:.0f} IOPS** — avalie tier NVMe para I/O intensivo")
 
-        # Scale DOWN: subutilização clara
-        if action == "ok" and cpu < 15 and conn_pct < 20 and tier != "M10":
+        # ── Scale DOWN: subutilização clara nas 3 métricas-chave ──
+        if (action == "ok" and cpu < 15 and conn_pct < 20
+                and mem_pct < 50 and disk_pct < 50 and tier != "M10"):
             action, severity = "down", "low"
-            reasons.append(f"CPU em **{cpu}%** e conexões baixas — possível economia de custo")
+            reasons.append(f"CPU **{cpu}%**, memória **{mem_pct}%**, disco **{disk_pct}%** — "
+                           "tudo baixo, possível economia de custo")
 
         headlines = {
             "up":   "⬆️ Recomendação: Scale UP",
@@ -350,10 +414,19 @@ class AtlasClient:
             "ok":   "✅ Tier adequado para a carga atual",
         }
         if action == "ok" and not reasons:
-            reasons.append(f"CPU em **{cpu}%**, conexões saudáveis — nenhuma ação necessária")
+            reasons.append(f"CPU **{cpu}%**, memória **{mem_pct}%**, storage **{disk_pct}%** — "
+                           "tudo saudável, nenhuma ação necessária")
 
         return {"action": action, "severity": severity,
-                "reasons": reasons, "headline": headlines[action]}
+                "reasons": reasons, "headline": headlines[action],
+                # métricas-chave p/ a UI exibir (CPU · Memória · Storage · Conexões)
+                "metrics": {
+                    "cpu_pct": cpu, "mem_pct": mem_pct, "disk_pct": disk_pct,
+                    "connections": conns, "conn_pct": round(conn_pct, 1),
+                    "memory_used_gb": measurements.get("memory_used_gb", 0),
+                    "mem_total_gb": measurements.get("mem_total_gb", 0),
+                    "iops": round(iops),
+                }}
 
     # ── Performance Advisor ───────────────────────────────────────────────
     def get_suggested_indexes(self, project_id, process_id):

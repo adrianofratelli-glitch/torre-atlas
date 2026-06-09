@@ -53,9 +53,24 @@ export default function Scale({ clusters, config }) {
         <Kpi label="Custo Atual/Mês" value={`R$ ${sel.cost_brl.toLocaleString('pt-BR')}`} delta={`≈ USD ${sel.cost_usd.toLocaleString('pt-BR')}`} />
       </KpiGrid>
 
-      {/* ── Recomendação: por que escalar (ou não) ── */}
-      <Section title="Recomendação Inteligente" sub="baseada em métricas reais (CPU · conexões · IOPS)" />
+      {/* ── Métricas-chave que regem o scaling: CPU · Memória · Storage ── */}
+      <Section title="Métricas de Scaling" sub="as 3 dimensões que definem o tier" />
       {loading && <Body style={{ color: '#889397' }}>Analisando métricas do cluster…</Body>}
+      {rec?.metrics && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
+          <MetricBar label="CPU" pct={rec.metrics.cpu_pct}
+                     sub={`${rec.metrics.cpu_pct}%`} warn={75} crit={90} />
+          <MetricBar label="Memória" pct={rec.metrics.mem_pct}
+                     sub={`${rec.metrics.memory_used_gb}/${rec.metrics.mem_total_gb} GB · ${rec.metrics.mem_pct}%`} warn={75} crit={90} />
+          <MetricBar label="Storage" pct={rec.metrics.disk_pct}
+                     sub={`${rec.metrics.disk_pct}% do disco`} warn={70} crit={85} />
+          <MetricBar label="Conexões" pct={rec.metrics.conn_pct}
+                     sub={`${rec.metrics.connections} · ${rec.metrics.conn_pct}% do limite`} warn={60} crit={80} />
+        </div>
+      )}
+
+      {/* ── Recomendação: por que escalar (ou não) ── */}
+      <Section title="Recomendação Inteligente" sub="baseada em CPU · memória · storage · conexões reais" />
       {rec && rec.headline && (
         <Banner variant={recColor} style={{ marginBottom: 8 }}>
           <b>{rec.headline}</b>
@@ -111,5 +126,23 @@ export default function Scale({ clusters, config }) {
       </Card>
       {msg && <Banner variant={msg.ok ? 'success' : 'danger'} style={{ marginTop: 14 }}>{msg.t}</Banner>}
     </>
+  )
+}
+
+// Barra de métrica com cor por gravidade (verde → amarelo → vermelho)
+function MetricBar({ label, pct, sub, warn = 75, crit = 90 }) {
+  const v = Math.max(0, Math.min(100, pct || 0))
+  const color = v >= crit ? '#F87171' : v >= warn ? '#FACC15' : '#00ED64'
+  return (
+    <div style={{ background: '#00271C', border: '1px solid rgba(255,255,255,0.06)',
+                  borderTop: `3px solid ${color}`, borderRadius: '0 0 8px 8px', padding: '14px 16px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px',
+                    color: '#5C6C75', marginBottom: 8 }}>{label}</div>
+      <div className="mono" style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1 }}>{v}%</div>
+      <div style={{ height: 6, background: '#001016', borderRadius: 3, overflow: 'hidden', margin: '8px 0 6px' }}>
+        <div style={{ width: `${v}%`, height: '100%', background: color }} />
+      </div>
+      <div style={{ fontSize: 11, color: '#889397', fontFamily: "'IBM Plex Mono',monospace" }}>{sub}</div>
+    </div>
   )
 }

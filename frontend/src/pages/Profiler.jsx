@@ -118,9 +118,22 @@ export default function Profiler({ clusters, config }) {
                 return (
                   <>
                     <tr key={i}>
-                      <td className="mono" style={{ color: '#00ED64' }}>{r.ns}</td>
-                      <td><Badge variant={r.kind === 'write' ? 'yellow' : 'blue'}>{r.kind === 'write' ? '✏️ ' + r.op : '📖 ' + r.op}</Badge></td>
-                      <td>{r.plan}</td>
+                      <td className="mono" style={{ color: '#00ED64' }}>
+                        <div title={r.ns} style={{ maxWidth: 230, overflow: 'hidden',
+                             textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ns}</div>
+                      </td>
+                      <td>
+                        <Badge variant={r.kind === 'write' ? 'yellow' : 'blue'}>
+                          <span title={r.op} style={{ display: 'inline-block', maxWidth: 100, overflow: 'hidden',
+                                  textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}>
+                            {r.kind === 'write' ? '✏️ ' : '📖 '}{r.op}
+                          </span>
+                        </Badge>
+                      </td>
+                      <td>
+                        <div title={r.planRaw} style={{ maxWidth: 130, overflow: 'hidden',
+                             textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.plan}</div>
+                      </td>
                       <td className="mono">{r.count.toLocaleString('pt-BR')}×</td>
                       <td className="mono">{r.maxDur.toLocaleString('pt-BR')} / {r.avgDur.toLocaleString('pt-BR')}ms</td>
                       <td className="mono" style={{ color: '#889397' }}>{r.docs.toLocaleString('pt-BR')}</td>
