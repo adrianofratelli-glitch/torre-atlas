@@ -22,7 +22,7 @@ export WEB_PORT="${WEB_PORT:-$(free_port 5290)}"
 
 # Deps backend
 if ! python -c "import fastapi" 2>/dev/null; then
-  echo "📦 Instalando deps do backend…"; pip install -q fastapi "uvicorn[standard]" sse-starlette
+  echo "📦 Instalando deps do backend…"; pip install -q -r requirements.txt
 fi
 
 echo "──────────────────────────────────────────────"

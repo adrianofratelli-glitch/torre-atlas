@@ -89,7 +89,6 @@ def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, e
     # Auto-título: usa a 1ª mensagem do usuário
     if role == "user":
         title = content[:70] + ("…" if len(content) > 70 else "")
-        update["$setOnInsert"] = {}   # mantém created_at
         # Só seta título se ainda for "Nova Conversa"
         _get_collection(mongo_uri).update_one(
             {"_id": ObjectId(conversation_id), "title": "Nova Conversa"},

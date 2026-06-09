@@ -32,13 +32,13 @@
 |--------|-----------|
 | 📊 **Visão Geral** | Snapshot estático e rápido da frota (clusters, status, custo, alertas) |
 | 🗄️ **Clusters** | Tabela de todos os clusters da org com tier, região, status e custo |
-| ⚡ **Performance Advisor** | Índices sugeridos + execução via pymongo + análise com Claude |
+| ⚡ **Performance Advisor** | Índices sugeridos + execução via pymongo + análise com Claude + relatório PDF |
 | 🔍 **Query Profiler** | Slow queries parseadas (plano, COLLSCAN, docs examinados, latência) |
 | ❤️ **Health Score** | Nota 0–100 combinando PA, slow queries, status e versão |
 | 📈 **Scale** | Recomendação inteligente (CPU/conexões/IOPS reais) + gráfico 24h + scaling |
 | 💰 **FinOps** | Estimativa de custo por cluster e projeto |
 | 📊 **Compare** | Comparativo side-by-side entre 2 clusters |
-| 💬 **AI Chat** | Chat com Claude usando contexto real do cluster (streaming) |
+| 💬 **AI Chat** | Chat com Claude usando contexto real do cluster (streaming) + histórico persistido no Atlas |
 
 ---
 
@@ -56,7 +56,8 @@ ATLAS_PUBLIC_KEY=...
 ATLAS_PRIVATE_KEY=...
 ATLAS_ORG_ID=...
 ANTHROPIC_API_KEY=...
-MONGODB_URI=mongodb+srv://...   # opcional (criar índices + histórico)
+MONGODB_URI=mongodb+srv://...   # opcional (criar índices + histórico do chat)
+CLAUDE_MODEL=claude-sonnet-4-6  # opcional (default; ex: claude-opus-4-8)
 ```
 
 ### 2. Suba tudo com um comando

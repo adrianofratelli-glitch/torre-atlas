@@ -3,10 +3,12 @@ ai_agent.py — Claude-powered MongoDB analysis + conversational chat
 """
 
 import json
+import os
 import anthropic
 from typing import Iterator
 
-MODEL = "claude-sonnet-4-6"
+# Sonnet 4.6 = melhor custo/velocidade para a demo; troque via .env (ex: claude-opus-4-8)
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -300,17 +302,26 @@ def generate_pdf_report(
 
 def friendly_api_error(err: Exception) -> str:
     """Converte exceções da API Anthropic em mensagens amigáveis para a demo."""
-    msg = str(err).lower()
-    if "authentication" in msg or "401" in msg or "invalid x-api-key" in msg or "api_key" in msg:
+    if isinstance(err, anthropic.AuthenticationError):
         return ("🔑 **API Key da Anthropic inválida ou expirada.** "
-                "Verifique a chave no painel lateral (deve começar com `sk-ant-`).")
-    if "rate" in msg or "429" in msg or "overloaded" in msg:
+                "Verifique a ANTHROPIC_API_KEY no `.env` do servidor (deve começar com `sk-ant-`).")
+    if isinstance(err, anthropic.PermissionDeniedError):
+        msg = str(err).lower()
+        if "credit" in msg or "billing" in msg:
+            return ("💳 **Créditos da conta Anthropic esgotados.** "
+                    "Verifique o billing em console.anthropic.com.")
+        return ("🚫 **API Key sem permissão para este recurso.** "
+                "Verifique o workspace e os limites em console.anthropic.com.")
+    if isinstance(err, anthropic.RateLimitError):
         return ("⏳ **Limite de requisições atingido.** "
                 "Aguarde alguns segundos e tente novamente.")
-    if "connection" in msg or "timeout" in msg or "network" in msg:
+    if isinstance(err, anthropic.NotFoundError):
+        return (f"❓ **Modelo `{MODEL}` não encontrado.** "
+                "Verifique o CLAUDE_MODEL no `.env`.")
+    if isinstance(err, anthropic.APIStatusError) and err.status_code >= 500:
+        return ("⏳ **API da Anthropic temporariamente sobrecarregada.** "
+                "Tente novamente em alguns instantes.")
+    if isinstance(err, anthropic.APIConnectionError):
         return ("🌐 **Falha de conexão com a Anthropic.** "
                 "Verifique sua internet e tente novamente.")
-    if "credit" in msg or "billing" in msg or "quota" in msg:
-        return ("💳 **Créditos da conta Anthropic esgotados.** "
-                "Verifique o billing em console.anthropic.com.")
     return f"❌ **Erro ao chamar Claude:** {err}"

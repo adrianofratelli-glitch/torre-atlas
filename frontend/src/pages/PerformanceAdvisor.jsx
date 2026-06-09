@@ -4,26 +4,41 @@ import Button from '@leafygreen-ui/button'
 import Banner from '@leafygreen-ui/banner'
 import Card from '@leafygreen-ui/card'
 import { Section, Empty } from '../components.jsx'
-import { getPA, createIndex, streamAnalyze } from '../api.js'
+import { getPA, createIndex, streamAnalyze, downloadReport } from '../api.js'
 import { ClusterPicker } from './_picker.jsx'
 
 export default function PerformanceAdvisor({ clusters, config }) {
   const [sel, setSel] = useState(clusters[0])
   const [data, setData] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [busyAI, setBusyAI] = useState(false)
   const [err, setErr] = useState(null)
   const [analysis, setAnalysis] = useState('')
+  const [idxMsg, setIdxMsg] = useState(null)   // { i, ok, text } — resultado do createIndex por card
 
   const load = async () => {
-    setBusy(true); setErr(null); setData(null); setAnalysis('')
+    setBusy(true); setErr(null); setData(null); setAnalysis(''); setIdxMsg(null)
     try { setData(await getPA(sel.project_id, sel.cluster_name)) }
     catch (e) { setErr(e?.response?.data?.detail || e.message) }
     finally { setBusy(false) }
   }
 
   const analyze = async () => {
-    setAnalysis('')
-    for await (const chunk of streamAnalyze(sel.project_id, sel.cluster_name)) setAnalysis(a => a + chunk)
+    setAnalysis(''); setErr(null); setBusyAI(true)
+    try {
+      for await (const chunk of streamAnalyze(sel.project_id, sel.cluster_name)) setAnalysis(a => a + chunk)
+    } catch (e) { setErr(e.message) }
+    finally { setBusyAI(false) }
+  }
+
+  const runIndex = async (i, ns, indexKeys) => {
+    setIdxMsg({ i, ok: true, text: '⏳ Criando índice…' })
+    try {
+      const r = await createIndex(ns, indexKeys)
+      setIdxMsg({ i, ok: !String(r.result).startsWith('❌'), text: r.result })
+    } catch (e) {
+      setIdxMsg({ i, ok: false, text: e?.response?.data?.detail || e.message })
+    }
   }
 
   const suggestions = data?.suggestedIndexes || []
@@ -52,15 +67,24 @@ export default function PerformanceAdvisor({ clusters, config }) {
                 <Body weight="medium">#{i + 1} · {ns} · peso {Math.round((idx.weight || 0) * 100) / 100}</Body>
                 <pre>{cmd}</pre>
                 {config.mongodb && (
-                  <Button size="small" onClick={async () => {
-                    const r = await createIndex(ns, idx.index)
-                    alert(r.result)
-                  }}>▶ Executar Índice</Button>
+                  <Button size="small" onClick={() => runIndex(i, ns, idx.index)}>▶ Executar Índice</Button>
+                )}
+                {idxMsg?.i === i && (
+                  <Banner variant={idxMsg.ok ? 'success' : 'danger'} style={{ marginTop: 10 }}>{idxMsg.text}</Banner>
                 )}
               </Card>
             )
           })}
-          <Button variant="primaryOutline" onClick={analyze} style={{ marginTop: 8 }}>🤖 Analisar com Claude</Button>
+          <div className="row" style={{ marginTop: 8, gap: 10 }}>
+            <Button variant="primaryOutline" onClick={analyze} disabled={busyAI}>
+              {busyAI ? '🤖 Analisando…' : '🤖 Analisar com Claude'}
+            </Button>
+            {analysis && !busyAI && (
+              <Button variant="default" onClick={() => downloadReport(sel.cluster_name, analysis).catch(e => setErr(e.message))}>
+                📄 Baixar Relatório PDF
+              </Button>
+            )}
+          </div>
           {analysis && <Card darkMode style={{ marginTop: 12 }}><div style={{ whiteSpace: 'pre-wrap' }}>{analysis}</div></Card>}
         </>
       )}

@@ -13,7 +13,7 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from atlas_client import (
@@ -91,7 +91,18 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Conversation-Id"],
 )
+
+
+# ── MongoDB (cliente cacheado — pool de conexões reusado entre requests) ──────
+_mongo_clients: dict = {}
+
+def _mongo(uri: str):
+    from pymongo import MongoClient
+    if uri not in _mongo_clients:
+        _mongo_clients[uri] = MongoClient(uri, serverSelectionTimeoutMS=6000)
+    return _mongo_clients[uri]
 
 
 # ── Health / config ───────────────────────────────────────────────────────────
@@ -332,13 +343,11 @@ def explain_query(body: ExplainBody):
     if not uri:
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
     try:
-        from pymongo import MongoClient
         parts = body.namespace.split(".", 1)
         db_name, coll = parts[0], (parts[1] if len(parts) > 1 else parts[0])
-        mc = MongoClient(uri, serverSelectionTimeoutMS=6000)
+        mc = _mongo(uri)
         plan = mc[db_name].command("explain", {"find": coll, "filter": body.filter},
                                    verbosity="executionStats")
-        mc.close()
         exe = plan.get("executionStats", {})
         win = plan.get("queryPlanner", {}).get("winningPlan", {})
         return {
@@ -393,6 +402,18 @@ class ChatBody(BaseModel):
     messages: list           # [{"role","content"}]
     project_id: Optional[str] = None
     cluster_name: Optional[str] = None
+    conversation_id: Optional[str] = None
+
+_chat_db_ready = False
+
+def _ensure_chat_db(uri: str):
+    """Garante os índices da coleção de histórico uma única vez por processo."""
+    global _chat_db_ready
+    if not _chat_db_ready:
+        from chat_memory import init_db
+        init_db(uri)
+        _chat_db_ready = True
+
 
 @app.post("/api/chat")
 def chat(body: ChatBody):
@@ -407,13 +428,57 @@ def chat(body: ChatBody):
         meas = client.get_measurements(body.project_id, pid) if pid else {}
         system = build_chat_system_prompt(full_c, pa, sq, meas)
 
+    # Persistência no Atlas (best-effort — chat funciona mesmo sem MONGODB_URI)
+    uri = os.getenv("MONGODB_URI", "")
+    conv_id = body.conversation_id
+    user_msg = body.messages[-1].get("content", "") if body.messages else ""
+    if uri and user_msg:
+        try:
+            from chat_memory import new_conversation, add_message
+            _ensure_chat_db(uri)
+            if not conv_id:
+                conv_id = new_conversation(uri, body.cluster_name or "")
+            add_message(uri, conv_id, "user", user_msg)
+        except Exception:
+            conv_id = None
+
     def gen():
+        acc = []
         try:
             for chunk in stream_chat(body.messages, system):
+                acc.append(chunk)
                 yield chunk
         except Exception as e:
-            yield friendly_api_error(e)
-    return StreamingResponse(gen(), media_type="text/plain")
+            err = friendly_api_error(e)
+            acc.append(err)
+            yield err
+        if uri and conv_id:
+            try:
+                from chat_memory import add_message
+                add_message(uri, conv_id, "assistant", "".join(acc))
+            except Exception:
+                pass
+
+    headers = {"X-Conversation-Id": conv_id} if conv_id else {}
+    return StreamingResponse(gen(), media_type="text/plain", headers=headers)
+
+
+# ── Relatório PDF da análise (branding MongoDB, fallback Markdown) ────────────
+class ReportBody(BaseModel):
+    cluster_name: str
+    analysis: str
+    health_score: Optional[int] = None
+    health_issues: Optional[list] = None
+
+@app.post("/api/report")
+def report(body: ReportBody):
+    data, mime, ext = generate_pdf_report(
+        body.cluster_name, body.analysis, body.health_score, body.health_issues
+    )
+    return Response(
+        content=data, media_type=mime,
+        headers={"Content-Disposition": f'attachment; filename="maestro-{body.cluster_name}.{ext}"'},
+    )
 
 
 # ── Chat history (persistência no Atlas, opcional) ────────────────────────────
@@ -423,11 +488,16 @@ def _mongo_or_400():
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado.")
     return uri
 
+_MONGO_DOWN = "Cluster do MONGODB_URI inacessível (pausado ou IP fora da access list)."
+
 @app.get("/api/chat/conversations")
 def conversations(q: str = ""):
     uri = _mongo_or_400()
     from chat_memory import list_conversations, search_conversations
-    rows = search_conversations(uri, q) if q else list_conversations(uri, limit=25)
+    try:
+        rows = search_conversations(uri, q) if q else list_conversations(uri, limit=25)
+    except Exception:
+        raise HTTPException(status_code=503, detail=_MONGO_DOWN)
     return {"conversations": [
         {"id": r["id"], "title": r["title"], "cluster": r.get("cluster", ""),
          "msg_count": r.get("msg_count", 0), "updated_at": str(r.get("updated_at", ""))}
@@ -438,13 +508,23 @@ def conversations(q: str = ""):
 def conversation_messages(conv_id: str):
     uri = _mongo_or_400()
     from chat_memory import load_messages
-    return {"messages": load_messages(uri, conv_id)}
+    try:
+        msgs = load_messages(uri, conv_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail=_MONGO_DOWN)
+    return {"messages": [
+        {"role": m.get("role"), "content": m.get("content"), "ts": str(m.get("ts", ""))}
+        for m in msgs
+    ]}
 
 @app.delete("/api/chat/conversations/{conv_id}")
 def delete_conversation_ep(conv_id: str):
     uri = _mongo_or_400()
     from chat_memory import delete_conversation
-    delete_conversation(uri, conv_id)
+    try:
+        delete_conversation(uri, conv_id)
+    except Exception:
+        raise HTTPException(status_code=503, detail=_MONGO_DOWN)
     return {"ok": True}
 
 

@@ -20,13 +20,24 @@ export const createIndex    = (namespace, indexKeys) => http.post('/index', { na
 export const getFinops      = () => http.get('/finops').then(r => r.data)
 export const explainQuery   = (namespace, filter) => http.post('/explain', { namespace, filter }).then(r => r.data)
 
+// Histórico de conversas (persistido no Atlas — requer MONGODB_URI no backend)
+export const listConversations  = (q = '') => http.get('/chat/conversations', { params: { q } }).then(r => r.data.conversations)
+export const getConversation    = (id) => http.get(`/chat/conversations/${id}`).then(r => r.data.messages)
+export const deleteConversation = (id) => http.delete(`/chat/conversations/${id}`).then(r => r.data)
+
 // Streaming helpers (fetch para ler chunks de texto)
-export async function* streamChat(messages, project_id, cluster_name) {
-  const res = await fetch('/api/chat', {
+async function* streamPost(url, payload, onResponse) {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, project_id, cluster_name }),
+    body: JSON.stringify(payload),
   })
+  if (!res.ok || !res.body) {
+    let detail = `Erro HTTP ${res.status}`
+    try { detail = (await res.json()).detail || detail } catch { /* corpo não-JSON */ }
+    throw new Error(detail)
+  }
+  onResponse?.(res)
   const reader = res.body.getReader()
   const dec = new TextDecoder()
   while (true) {
@@ -36,17 +47,25 @@ export async function* streamChat(messages, project_id, cluster_name) {
   }
 }
 
-export async function* streamAnalyze(project_id, cluster_name) {
-  const res = await fetch('/api/analyze', {
+export const streamChat = (messages, project_id, cluster_name, conversation_id, onResponse) =>
+  streamPost('/api/chat', { messages, project_id, cluster_name, conversation_id }, onResponse)
+
+export const streamAnalyze = (project_id, cluster_name) =>
+  streamPost('/api/analyze', { project_id, cluster_name })
+
+// Baixa o relatório PDF (ou Markdown, se fpdf2 indisponível) da análise
+export async function downloadReport(cluster_name, analysis, health_score = null, health_issues = null) {
+  const res = await fetch('/api/report', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ project_id, cluster_name }),
+    body: JSON.stringify({ cluster_name, analysis, health_score, health_issues }),
   })
-  const reader = res.body.getReader()
-  const dec = new TextDecoder()
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    yield dec.decode(value, { stream: true })
-  }
+  if (!res.ok) throw new Error(`Erro ao gerar relatório (HTTP ${res.status})`)
+  const blob = await res.blob()
+  const ext = (res.headers.get('Content-Type') || '').includes('pdf') ? 'pdf' : 'md'
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = `maestro-${cluster_name}.${ext}`
+  a.click()
+  URL.revokeObjectURL(a.href)
 }

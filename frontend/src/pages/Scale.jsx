@@ -3,7 +3,7 @@ import { H1, H3, Body } from '@leafygreen-ui/typography'
 import Button from '@leafygreen-ui/button'
 import Banner from '@leafygreen-ui/banner'
 import Card from '@leafygreen-ui/card'
-import { KpiGrid, Kpi, Section, MiniChart } from '../components.jsx'
+import { KpiGrid, Kpi, Section, MiniChart, Empty } from '../components.jsx'
 import { getScaling, getSeries, scaleCluster } from '../api.js'
 import { ClusterPicker } from './_picker.jsx'
 
@@ -25,8 +25,16 @@ export default function Scale({ clusters, config }) {
   }, [sel])
 
   const usdBrl = config.usd_brl
-  const pricing = config.pricing
-  const tiers = config.tiers.dedicated
+  const pricing = config.pricing || {}
+  const tiers = config.tiers?.dedicated || []
+
+  if (!sel) return (
+    <>
+      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Scale</H1></div>
+      <Empty icon="📈" title="Nenhum cluster encontrado" hint="Verifique as credenciais do Atlas no servidor (.env) e recarregue a página." />
+    </>
+  )
+
   const curUsd = pricing[sel.tier] || 0
   const newUsd = pricing[newTier] || 0
   const deltaUsd = newUsd - curUsd

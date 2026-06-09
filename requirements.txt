@@ -1,7 +1,6 @@
 # Backend — Maestro Atlas Control Plane (FastAPI)
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
-sse-starlette>=2.0.0
 
 # Lógica de negócio (reusada pelo backend)
 requests>=2.31.0

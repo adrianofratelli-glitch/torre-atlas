@@ -7,7 +7,7 @@ import Badge from '@leafygreen-ui/badge'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Leaf } from '../components.jsx'
-import { streamChat } from '../api.js'
+import { streamChat, listConversations, getConversation, deleteConversation } from '../api.js'
 
 const SUGGESTIONS = [
   'Quais indicadores mostram que meu cluster precisa de scale up?',
@@ -21,8 +21,30 @@ export default function Chat({ clusters, config }) {
   const [msgs, setMsgs] = useState([])
   const [input, setInput] = useState('')
   const [busy, setBusy] = useState(false)
+  const [convId, setConvId] = useState(null)
+  const [history, setHistory] = useState([])
   const endRef = useRef(null)
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
+
+  const refreshHistory = () => {
+    if (config.mongodb) listConversations().then(setHistory).catch(() => {})
+  }
+  useEffect(refreshHistory, [config.mongodb])
+
+  const openConversation = async (id) => {
+    if (!id) { setMsgs([]); setConvId(null); return }
+    try {
+      const messages = await getConversation(id)
+      setMsgs(messages.map(m => ({ role: m.role, content: m.content })))
+      setConvId(id)
+    } catch { /* conversa removida — lista será atualizada no próximo refresh */ }
+  }
+
+  const removeConversation = async () => {
+    if (!convId) return
+    try { await deleteConversation(convId) } catch { /* já removida */ }
+    setMsgs([]); setConvId(null); refreshHistory()
+  }
 
   const send = async (text) => {
     if (!text.trim() || busy) return
@@ -31,10 +53,14 @@ export default function Chat({ clusters, config }) {
     let acc = ''
     setMsgs([...next, { role: 'assistant', content: '' }])
     try {
-      for await (const chunk of streamChat(next, ctx?.project_id, ctx?.cluster_name)) {
+      const onResponse = res => { const id = res.headers.get('X-Conversation-Id'); if (id) setConvId(id) }
+      for await (const chunk of streamChat(next, ctx?.project_id, ctx?.cluster_name, convId, onResponse)) {
         acc += chunk
         setMsgs([...next, { role: 'assistant', content: acc }])
       }
+      refreshHistory()
+    } catch (e) {
+      setMsgs([...next, { role: 'assistant', content: `❌ **Erro:** ${e.message}` }])
     } finally { setBusy(false) }
   }
 
@@ -50,6 +76,17 @@ export default function Chat({ clusters, config }) {
           {clusters.map(c => <option key={c.cluster_name} value={c.cluster_name}>📎 {c.cluster_name}</option>)}
         </select>
       </div>
+
+      {config.mongodb && (
+        <div className="row" style={{ marginBottom: 12, gap: 8 }}>
+          <select className="mono" value={convId || ''} onChange={e => openConversation(e.target.value)}
+            style={{ background: '#00271C', color: '#E3FCF7', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxWidth: 420 }}>
+            <option value="">🕘 Histórico — nova conversa</option>
+            {history.map(h => <option key={h.id} value={h.id}>{h.title} · {h.msg_count} msg{h.cluster ? ` · 📎 ${h.cluster}` : ''}</option>)}
+          </select>
+          {convId && <Button size="xsmall" variant="dangerOutline" onClick={removeConversation}>🗑 Apagar</Button>}
+        </div>
+      )}
 
       {ctx && <div style={{ marginBottom: 12 }}><Badge variant="green">Contexto: métricas reais de {ctx.cluster_name}</Badge></div>}
 
