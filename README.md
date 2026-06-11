@@ -98,6 +98,10 @@ torre/
 
 ---
 
+## 🙏 Créditos
+
+O Torre foi baseado no **Maestro**, projeto original criado pela **Carime** — obrigado pela base e inspiração! 💚
+
 ## 📄 Licença
 
 MIT — veja [LICENSE](LICENSE).
