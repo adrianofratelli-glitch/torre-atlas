@@ -100,7 +100,7 @@ torre/
 
 ## 🙏 Créditos
 
-O Torre foi baseado no **Maestro**, projeto original criado pela **Carime** — obrigado pela base e inspiração! 💚
+O Torre foi baseado no **[Maestro](https://github.com/carimeb/maestro-atlas-landing-zone)**, projeto original criado pela **[Carime](https://github.com/carimeb)** — obrigado pela base e inspiração! 💚
 
 ## 📄 Licença
 
