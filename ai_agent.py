@@ -193,7 +193,7 @@ def _markdown_report(cluster_name, analysis_text, health_score, health_issues) -
     """Fallback: relatório em Markdown puro."""
     from datetime import datetime
     lines = [
-        "# Maestro — Atlas Report",
+        "# Torre — Atlas Report",
         f"**Cluster:** `{cluster_name}`  ",
         f"**Data:** {datetime.now().strftime('%d/%m/%Y %H:%M')}",
         "",
@@ -241,7 +241,7 @@ def generate_pdf_report(
         pdf.set_xy(14, 9)
         pdf.set_text_color(0, 237, 100)
         pdf.set_font("Helvetica", "B", 18)
-        pdf.cell(0, 8, "Maestro", ln=False)
+        pdf.cell(0, 8, "Torre", ln=False)
         pdf.set_text_color(227, 252, 247)
         pdf.set_font("Helvetica", "", 18)
         pdf.cell(0, 8, "  Atlas Control Plane", ln=True)

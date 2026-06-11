@@ -1,4 +1,4 @@
-# Backend — Maestro Atlas Control Plane (FastAPI)
+# Backend — Torre Atlas Control Plane (FastAPI)
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 

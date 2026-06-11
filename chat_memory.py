@@ -2,7 +2,7 @@
 chat_memory.py — Chat history persistido no MongoDB Atlas
 Showcases: Document Model · Embedded Arrays · Text Index · Aggregation
 
-Coleção: maestro.chat_history
+Coleção: torre.chat_history
 Estrutura:
 {
   "_id": ObjectId,
@@ -23,7 +23,7 @@ from bson import ObjectId
 from pymongo import MongoClient, TEXT, DESCENDING
 from pymongo.collection import Collection
 
-DB_NAME   = "maestro"
+DB_NAME   = "torre"
 COLL_NAME = "chat_history"
 
 _clients: dict = {}

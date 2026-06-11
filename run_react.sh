@@ -1,17 +1,17 @@
 #!/bin/bash
-# run_react.sh — sobe o Maestro v3 (FastAPI + React/LeafyGreen)
+# run_react.sh — sobe o Torre (FastAPI + React/LeafyGreen)
 # Mata leftovers de execuções anteriores e auto-detecta portas livres.
 cd "$(dirname "$0")"
 
 # Carrega .env
 if [ -f .env ]; then export $(grep -v '^#' .env | xargs); echo "✅ .env carregado"; fi
 
-# Mata instâncias antigas DO MAESTRO (não toca em outras POCs)
+# Mata instâncias antigas DO TORRE (não toca em outras POCs)
 pkill -f "uvicorn api:app" 2>/dev/null
-pkill -f "maestro/frontend.*vite" 2>/dev/null
+pkill -f "torre/frontend.*vite" 2>/dev/null
 # vite genérico só se for desta pasta
 for pid in $(pgrep -f "vite" 2>/dev/null); do
-  if ps -o command= -p "$pid" 2>/dev/null | grep -q "maestro"; then kill "$pid" 2>/dev/null; fi
+  if ps -o command= -p "$pid" 2>/dev/null | grep -q "torre"; then kill "$pid" 2>/dev/null; fi
 done
 sleep 1
 

@@ -52,7 +52,7 @@ export default function App() {
         <div className="sidenav-brand">
           <Leaf size={28} />
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15, color: '#E3FCF7' }}>Maestro</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: '#E3FCF7' }}>Torre</div>
             <div className="mono" style={{ fontSize: 9, color: '#3D5A6C', letterSpacing: 1.5 }}>ATLAS CONTROL PLANE</div>
           </div>
         </div>

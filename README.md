@@ -1,6 +1,6 @@
-# 🍃 Maestro — Atlas Control Plane
+# 🗼 Torre — Atlas Control Plane
 
-> Dashboard operacional para MongoDB Atlas com IA integrada (Claude).
+> Dashboard operacional para MongoDB Atlas com IA integrada (Claude) — a torre de controle da sua frota de clusters.
 > **Frontend** React + [LeafyGreen](https://www.mongodb.design/) (design system oficial MongoDB) · **Backend** FastAPI reusando a lógica Python.
 
 ![React](https://img.shields.io/badge/React-18-blue)
@@ -68,9 +68,9 @@ O script ativa o venv, instala dependências se necessário, **acha portas livre
 
 > Atalho opcional no `~/.zshrc`:
 > ```bash
-> alias maestro="cd ~/maestro && source venv/bin/activate && ./run_react.sh"
+> alias torre="cd ~/torre && source venv/bin/activate && ./run_react.sh"
 > ```
-> Depois é só digitar `maestro`.
+> Depois é só digitar `torre`.
 
 ### Portas
 Defaults incomuns **8765** (API) / **5290** (UI), configuráveis:
@@ -83,7 +83,7 @@ API_PORT=8770 WEB_PORT=5295 ./run_react.sh
 ## 🗂️ Estrutura
 
 ```
-maestro/
+torre/
 ├── api.py                # Backend FastAPI — expõe a lógica como REST
 ├── atlas_client.py       # Client da Atlas Admin API v2 + recomendação de scaling
 ├── ai_agent.py           # Claude (streaming) — análise + chat + PDF

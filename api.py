@@ -1,5 +1,5 @@
 """
-api.py — Maestro Atlas Control Plane · Backend FastAPI
+api.py — Torre Atlas Control Plane · Backend FastAPI
 Expõe a lógica Python (atlas_client / ai_agent / chat_memory) como REST API
 para o frontend React + LeafyGreen consumir via axios.
 
@@ -83,7 +83,7 @@ def get_client() -> AtlasClient:
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Maestro Atlas Control Plane API", version="3.0")
+app = FastAPI(title="Torre Atlas Control Plane API", version="3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -477,7 +477,7 @@ def report(body: ReportBody):
     )
     return Response(
         content=data, media_type=mime,
-        headers={"Content-Disposition": f'attachment; filename="maestro-{body.cluster_name}.{ext}"'},
+        headers={"Content-Disposition": f'attachment; filename="torre-{body.cluster_name}.{ext}"'},
     )
 
 

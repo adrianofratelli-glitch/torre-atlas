@@ -1,4 +1,4 @@
-// api.js — cliente axios para o backend FastAPI do Maestro
+// api.js — cliente axios para o backend FastAPI do Torre
 import axios from 'axios'
 
 const http = axios.create({ baseURL: '/api', timeout: 60000 })
@@ -65,7 +65,7 @@ export async function downloadReport(cluster_name, analysis, health_score = null
   const ext = (res.headers.get('Content-Type') || '').includes('pdf') ? 'pdf' : 'md'
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
-  a.download = `maestro-${cluster_name}.${ext}`
+  a.download = `torre-${cluster_name}.${ext}`
   a.click()
   URL.revokeObjectURL(a.href)
 }
