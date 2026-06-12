@@ -6,7 +6,7 @@ import { KpiGrid, Kpi, Section } from '../components.jsx'
 import { getFinops } from '../api.js'
 
 const fmt = (n) => Math.round(n).toLocaleString('pt-BR')
-const COLOR = { green: '#00ED64', yellow: '#FFC010', red: '#FF6960', muted: '#889397' }
+const COLOR = { green: '#00ED64', yellow: '#f97316', red: '#ef4444', muted: '#7fa8bc' }
 const VAR = { green: 'green', yellow: 'yellow', red: 'red', muted: 'lightgray' }
 
 export default function FinOps({ clusters }) {
@@ -30,20 +30,20 @@ export default function FinOps({ clusters }) {
 
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>FinOps</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>FinOps</H1></div>
       <KpiGrid>
         <Kpi label="Total USD/Mês" value={`$${fmt(totalUsd)}`} />
         <Kpi label="Total BRL/Mês" value={`R$ ${fmt(totalBrl)}`} color="#00A35C" />
-        <Kpi label="Média/Cluster" value={`R$ ${fmt(avg)}`} color="#0498EC" />
+        <Kpi label="Média/Cluster" value={`R$ ${fmt(avg)}`} color="#06b6d4" />
         <Kpi label="Economia Potencial" value={busy ? '…' : `$${fmt(data?.potential_savings_usd || 0)}`}
              delta={busy ? 'avaliando…' : overprov.length ? `${overprov.length} subutilizado(s)` : 'frota otimizada'}
-             color={overprov.length ? '#FFC010' : '#00ED64'} />
+             color={overprov.length ? '#f97316' : '#00ED64'} />
       </KpiGrid>
 
       {!busy && <Banner variant={verdict.variant} style={{ marginBottom: 18 }}>{verdict.text}</Banner>}
 
       <Section title="Eficiência por Cluster" sub="custo vs utilização real de CPU" />
-      {busy && <Body style={{ color: '#889397' }}>Avaliando utilização dos clusters…</Body>}
+      {busy && <Body style={{ color: '#7fa8bc' }}>Avaliando utilização dos clusters…</Body>}
       {!busy && (
         <table className="mdb">
           <thead><tr><th>Projeto</th><th>Cluster</th><th>Tier</th><th>CPU</th><th style={{ textAlign: 'right' }}>USD/Mês</th><th>Veredito</th></tr></thead>
@@ -53,7 +53,7 @@ export default function FinOps({ clusters }) {
                 <td>{c.project}</td>
                 <td className="mono" style={{ color: '#00ED64' }}>{c.cluster}</td>
                 <td className="mono">{c.tier}</td>
-                <td className="mono" style={{ color: c.cpu == null ? '#5C6C75' : COLOR[c.color] }}>{c.cpu == null ? '—' : `${c.cpu}%`}</td>
+                <td className="mono" style={{ color: c.cpu == null ? '#6b94a8' : COLOR[c.color] }}>{c.cpu == null ? '—' : `${c.cpu}%`}</td>
                 <td className="mono" style={{ textAlign: 'right' }}>${fmt(c.cost_usd)}</td>
                 <td><Badge variant={VAR[c.color]}>{c.verdict}</Badge></td>
               </tr>

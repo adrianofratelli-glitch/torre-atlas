@@ -52,8 +52,8 @@ export default function App() {
         <div className="sidenav-brand">
           <Leaf size={28} />
           <div>
-            <div style={{ fontWeight: 800, fontSize: 15, color: '#E3FCF7' }}>Torre</div>
-            <div className="mono" style={{ fontSize: 9, color: '#3D5A6C', letterSpacing: 1.5 }}>ATLAS CONTROL PLANE</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: '#fafafa' }}>Torre</div>
+            <div className="mono" style={{ fontSize: 9, color: '#5f869e', letterSpacing: 1.5 }}>ATLAS CONTROL PLANE</div>
           </div>
         </div>
         {NAV.map((n, i) => n.section
@@ -64,17 +64,19 @@ export default function App() {
         )}
         <div className="spacer" />
         {config && (
-          <div className="mono" style={{ fontSize: 10, color: '#3D5A6C', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <div className="mono" style={{ fontSize: 10, color: '#5f869e', padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             {config.atlas ? '🟢' : '🔴'} Atlas&nbsp;&nbsp;{config.anthropic ? '🟢' : '⚪'} Claude&nbsp;&nbsp;{config.mongodb ? '🟢' : '⚪'} Mongo
           </div>
         )}
       </nav>
 
       <main className="main">
-        {loading && <Body style={{ color: '#889397' }}>🍃 Conectando ao MongoDB Atlas…</Body>}
+        {loading && <Body style={{ color: '#7fa8bc' }}>🍃 Conectando ao MongoDB Atlas…</Body>}
         {error && <Banner variant="danger">Erro ao carregar: {error}</Banner>}
         {!loading && !error && config && (
-          <Current clusters={clusters} config={config} />
+          <div className="page-enter" key={active}>
+            <Current clusters={clusters} config={config} />
+          </div>
         )}
       </main>
     </div>

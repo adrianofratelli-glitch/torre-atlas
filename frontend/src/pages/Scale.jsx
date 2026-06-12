@@ -30,7 +30,7 @@ export default function Scale({ clusters, config }) {
 
   if (!sel) return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Scale</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Scale</H1></div>
       <Empty icon="📈" title="Nenhum cluster encontrado" hint="Verifique as credenciais do Atlas no servidor (.env) e recarregue a página." />
     </>
   )
@@ -49,21 +49,21 @@ export default function Scale({ clusters, config }) {
   const recColor = rec?.severity === 'high' ? 'danger' : rec?.severity === 'med' ? 'warning' : 'success'
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Scale</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Scale</H1></div>
       <div className="row" style={{ marginBottom: 16 }}>
         <ClusterPicker clusters={clusters} value={sel} onChange={setSel} />
       </div>
 
       <KpiGrid>
-        <Kpi label="Cluster" value={sel.cluster_name} color="#0498EC" />
+        <Kpi label="Cluster" value={sel.cluster_name} color="#06b6d4" />
         <Kpi label="Tier Atual" value={sel.tier} color="#00A35C" />
-        <Kpi label="Região" value={sel.region_pretty} color="#889397" />
+        <Kpi label="Região" value={sel.region_pretty} color="#7fa8bc" />
         <Kpi label="Custo Atual/Mês" value={`R$ ${sel.cost_brl.toLocaleString('pt-BR')}`} delta={`≈ USD ${sel.cost_usd.toLocaleString('pt-BR')}`} />
       </KpiGrid>
 
       {/* ── Métricas-chave que regem o scaling: CPU · Memória · Storage ── */}
       <Section title="Métricas de Scaling" sub="as 3 dimensões que definem o tier" />
-      {loading && <Body style={{ color: '#889397' }}>Analisando métricas do cluster…</Body>}
+      {loading && <Body style={{ color: '#7fa8bc' }}>Analisando métricas do cluster…</Body>}
       {rec?.metrics && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
           <MetricBar label="CPU" pct={rec.metrics.cpu_pct}
@@ -88,7 +88,7 @@ export default function Scale({ clusters, config }) {
         </Banner>
       )}
       {rec && rec.action === 'ok' && (
-        <Body style={{ color: '#889397', fontSize: 13 }}>
+        <Body style={{ color: '#7fa8bc', fontSize: 13 }}>
           ✅ Sem necessidade imediata de scaling — você ainda pode simular cenários abaixo para planejar crescimento.
         </Body>
       )}
@@ -98,29 +98,29 @@ export default function Scale({ clusters, config }) {
 
       {/* ── Simulador de tier com custo ── */}
       <Section title="Simular Mudança de Tier" />
-      <Card darkMode>
+      <Card className="panel" darkMode>
         <div className="row" style={{ alignItems: 'flex-end', gap: 18 }}>
           <div>
-            <div style={{ fontSize: 11, color: '#889397', marginBottom: 6 }}>Novo tier</div>
+            <div style={{ fontSize: 11, color: '#7fa8bc', marginBottom: 6 }}>Novo tier</div>
             <select className="mono" value={newTier} onChange={e => setNewTier(e.target.value)}
-              style={{ background: '#001016', color: '#E3FCF7', border: '1px solid rgba(0,237,100,0.3)', borderRadius: 6, padding: '9px 14px', fontSize: 15 }}>
+              style={{ background: '#00141d', color: '#fafafa', border: '1px solid rgba(0,237,100,0.3)', borderRadius: 6, padding: '9px 14px', fontSize: 15 }}>
               {tiers.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           {newTier !== sel.tier && (
             <>
-              <div style={{ fontSize: 22, color: '#5C6C75' }}>→</div>
+              <div style={{ fontSize: 22, color: '#6b94a8' }}>→</div>
               <div>
-                <div style={{ fontSize: 11, color: '#889397', marginBottom: 6 }}>{direction}</div>
-                <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: '#E3FCF7' }}>
-                  R$ {Math.round(newUsd * usdBrl).toLocaleString('pt-BR')}<span style={{ fontSize: 12, color: '#889397' }}>/mês</span>
+                <div style={{ fontSize: 11, color: '#7fa8bc', marginBottom: 6 }}>{direction}</div>
+                <div className="mono" style={{ fontSize: 20, fontWeight: 700, color: '#fafafa' }}>
+                  R$ {Math.round(newUsd * usdBrl).toLocaleString('pt-BR')}<span style={{ fontSize: 12, color: '#7fa8bc' }}>/mês</span>
                 </div>
               </div>
               <div>
-                <div style={{ fontSize: 11, color: '#889397', marginBottom: 6 }}>Variação</div>
-                <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: deltaUsd >= 0 ? '#FF6960' : '#00ED64' }}>
+                <div style={{ fontSize: 11, color: '#7fa8bc', marginBottom: 6 }}>Variação</div>
+                <div className="mono" style={{ fontSize: 18, fontWeight: 700, color: deltaUsd >= 0 ? '#ef4444' : '#00ED64' }}>
                   {deltaUsd >= 0 ? '+' : ''}R$ {Math.round(deltaUsd * usdBrl).toLocaleString('pt-BR')}
-                  <span style={{ fontSize: 11, color: '#889397' }}> ({deltaUsd >= 0 ? '+' : ''}USD {deltaUsd.toLocaleString('pt-BR')})</span>
+                  <span style={{ fontSize: 11, color: '#7fa8bc' }}> ({deltaUsd >= 0 ? '+' : ''}USD {deltaUsd.toLocaleString('pt-BR')})</span>
                 </div>
               </div>
               <div className="spacer" />
@@ -142,15 +142,15 @@ function MetricBar({ label, pct, sub, warn = 75, crit = 90 }) {
   const v = Math.max(0, Math.min(100, pct || 0))
   const color = v >= crit ? '#F87171' : v >= warn ? '#FACC15' : '#00ED64'
   return (
-    <div style={{ background: '#00271C', border: '1px solid rgba(255,255,255,0.06)',
+    <div style={{ background: '#003345', border: '1px solid rgba(255,255,255,0.06)',
                   borderTop: `3px solid ${color}`, borderRadius: '0 0 8px 8px', padding: '14px 16px' }}>
       <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.2px',
-                    color: '#5C6C75', marginBottom: 8 }}>{label}</div>
+                    color: '#6b94a8', marginBottom: 8 }}>{label}</div>
       <div className="mono" style={{ fontSize: 22, fontWeight: 700, color, lineHeight: 1 }}>{v}%</div>
-      <div style={{ height: 6, background: '#001016', borderRadius: 3, overflow: 'hidden', margin: '8px 0 6px' }}>
+      <div style={{ height: 6, background: '#00141d', borderRadius: 3, overflow: 'hidden', margin: '8px 0 6px' }}>
         <div style={{ width: `${v}%`, height: '100%', background: color }} />
       </div>
-      <div style={{ fontSize: 11, color: '#889397', fontFamily: "'IBM Plex Mono',monospace" }}>{sub}</div>
+      <div style={{ fontSize: 11, color: '#7fa8bc', fontFamily: "'IBM Plex Mono',monospace" }}>{sub}</div>
     </div>
   )
 }

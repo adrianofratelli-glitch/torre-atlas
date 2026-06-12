@@ -20,7 +20,7 @@ export default function Health({ clusters }) {
 
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Health Score</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Health Score</H1></div>
       <div className="row" style={{ marginBottom: 18 }}>
         <ClusterPicker clusters={clusters} value={sel} onChange={setSel} />
         <Button variant="primary" onClick={calc} disabled={busy}>{busy ? 'Calculando…' : '❤️ Calcular Health Score'}</Button>
@@ -31,21 +31,21 @@ export default function Health({ clusters }) {
         <>
           {/* Nota grande + grade */}
           <div className="row" style={{ gap: 24, alignItems: 'stretch', marginBottom: 8 }}>
-            <Card darkMode style={{ textAlign: 'center', minWidth: 200 }}>
+            <Card className="panel" darkMode style={{ textAlign: 'center', minWidth: 200 }}>
               <div className="mono" style={{ fontSize: 64, fontWeight: 800, color: hs.color, lineHeight: 1 }}>{hs.grade}</div>
-              <div className="mono" style={{ fontSize: 20, color: hs.color, marginTop: 6 }}>{hs.score}<span style={{ color: '#5C6C75', fontSize: 14 }}>/100</span></div>
-              <div style={{ fontSize: 12, color: '#889397', marginTop: 8 }}>{interp(hs.grade)}</div>
+              <div className="mono" style={{ fontSize: 20, color: hs.color, marginTop: 6 }}>{hs.score}<span style={{ color: '#6b94a8', fontSize: 14 }}>/100</span></div>
+              <div style={{ fontSize: 12, color: '#7fa8bc', marginTop: 8 }}>{interp(hs.grade)}</div>
             </Card>
-            <Card darkMode style={{ flex: 1 }}>
-              <div style={{ fontSize: 11, color: '#5C6C75', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12, fontWeight: 700 }}>Composição do Score</div>
+            <Card className="panel" darkMode style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, color: '#6b94a8', textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 12, fontWeight: 700 }}>Composição do Score</div>
               {hs.components.map((c, i) => (
                 <div key={i} style={{ marginBottom: 10 }}>
                   <div className="row" style={{ justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 13 }}>{c.ok ? '🟢' : '🔴'} {c.label} <span style={{ color: '#5C6C75', fontSize: 11 }}>· {c.detail}</span></span>
-                    <span className="mono" style={{ fontSize: 12, color: c.earned === c.max ? '#00ED64' : '#FFC010' }}>{c.earned}/{c.max} pts</span>
+                    <span style={{ fontSize: 13 }}>{c.ok ? '🟢' : '🔴'} {c.label} <span style={{ color: '#6b94a8', fontSize: 11 }}>· {c.detail}</span></span>
+                    <span className="mono" style={{ fontSize: 12, color: c.earned === c.max ? '#00ED64' : '#f97316' }}>{c.earned}/{c.max} pts</span>
                   </div>
-                  <div style={{ height: 6, background: '#001016', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${(c.earned / c.max) * 100}%`, height: '100%', background: c.earned === c.max ? '#00ED64' : '#FFC010' }} />
+                  <div style={{ height: 6, background: '#00141d', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${(c.earned / c.max) * 100}%`, height: '100%', background: c.earned === c.max ? '#00ED64' : '#f97316' }} />
                   </div>
                 </div>
               ))}

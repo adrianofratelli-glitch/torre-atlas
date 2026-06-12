@@ -44,7 +44,7 @@ export default function PerformanceAdvisor({ clusters, config }) {
   const suggestions = data?.suggestedIndexes || []
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Performance Advisor</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Performance Advisor</H1></div>
       <div className="row" style={{ marginBottom: 18 }}>
         <ClusterPicker clusters={clusters} value={sel} onChange={setSel} />
         <Button variant="primary" onClick={load} disabled={busy}>{busy ? 'Consultando…' : '🔍 Buscar Recomendações'}</Button>
@@ -63,7 +63,7 @@ export default function PerformanceAdvisor({ clusters, config }) {
             const fields = (idx.index || []).map(k => `"${Object.keys(k)[0]}": ${Object.values(k)[0]}`).join(', ')
             const cmd = `db.${ns.split('.').pop()}.createIndex({ ${fields} })`
             return (
-              <Card key={i} darkMode style={{ marginBottom: 12 }}>
+              <Card className="panel" key={i} darkMode style={{ marginBottom: 12 }}>
                 <Body weight="medium">#{i + 1} · {ns} · peso {Math.round((idx.weight || 0) * 100) / 100}</Body>
                 <pre>{cmd}</pre>
                 {config.mongodb && (
@@ -85,7 +85,7 @@ export default function PerformanceAdvisor({ clusters, config }) {
               </Button>
             )}
           </div>
-          {analysis && <Card darkMode style={{ marginTop: 12 }}><div style={{ whiteSpace: 'pre-wrap' }}>{analysis}</div></Card>}
+          {analysis && <Card className="panel" darkMode style={{ marginTop: 12 }}><div style={{ whiteSpace: 'pre-wrap' }}>{analysis}</div></Card>}
         </>
       )}
     </>

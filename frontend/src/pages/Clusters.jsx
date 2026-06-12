@@ -5,7 +5,7 @@ import { Section, StatusDot } from '../components.jsx'
 export default function Clusters({ clusters }) {
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Clusters da Organização</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Clusters da Organização</H1></div>
       <Section title="Frota" badge={`${clusters.length} cluster(s)`} />
       <table className="mdb">
         <thead>
@@ -17,11 +17,11 @@ export default function Clusters({ clusters }) {
               <td>{c.project_name}</td>
               <td className="mono" style={{ color: '#00ED64' }}>{c.cluster_name}</td>
               <td><Badge variant="blue">{c.tier}</Badge></td>
-              <td style={{ color: '#889397' }}>{c.region_pretty}</td>
+              <td style={{ color: '#7fa8bc' }}>{c.region_pretty}</td>
               <td><span className="row" style={{ gap: 6 }}><StatusDot status={c.status} /><span className="mono" style={{ fontSize: 12 }}>{c.status}</span></span></td>
-              <td className="mono" style={{ color: '#889397' }}>{c.mongo_version}</td>
-              <td className="mono" style={{ color: '#889397' }}>{c.cluster_type}</td>
-              <td className="mono" style={{ textAlign: 'right' }}>${fmt(c.cost_usd)} <span style={{ color: '#3D5A6C' }}>/</span> <span style={{ color: '#00ED64' }}>R${fmt(c.cost_brl)}</span></td>
+              <td className="mono" style={{ color: '#7fa8bc' }}>{c.mongo_version}</td>
+              <td className="mono" style={{ color: '#7fa8bc' }}>{c.cluster_type}</td>
+              <td className="mono" style={{ textAlign: 'right' }}>${fmt(c.cost_usd)} <span style={{ color: '#5f869e' }}>/</span> <span style={{ color: '#00ED64' }}>R${fmt(c.cost_brl)}</span></td>
             </tr>
           ))}
         </tbody>

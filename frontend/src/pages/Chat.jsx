@@ -87,9 +87,9 @@ export default function Chat({ clusters, config }) {
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <div className="page-head" style={{ justifyContent: 'space-between' }}>
-        <div className="row"><Leaf size={24} /><H1 style={{ color: '#E3FCF7' }}>MongoDB Expert</H1></div>
+        <div className="row"><Leaf size={24} /><H1 style={{ color: '#fafafa' }}>MongoDB Expert</H1></div>
         <select className="mono" value={ctx?.cluster_name || ''} onChange={e => setCtx(clusters.find(c => c.cluster_name === e.target.value) || null)}
-          style={{ background: '#00271C', color: '#E3FCF7', border: '1px solid rgba(0,237,100,0.22)', borderRadius: 20, padding: '6px 14px', fontSize: 12 }}>
+          style={{ background: '#003345', color: '#fafafa', border: '1px solid rgba(0,237,100,0.25)', borderRadius: 20, padding: '6px 14px', fontSize: 12 }}>
           <option value="">🌐 MongoDB geral</option>
           {clusters.map(c => <option key={c.cluster_name} value={c.cluster_name}>📎 {c.cluster_name}</option>)}
         </select>
@@ -98,7 +98,7 @@ export default function Chat({ clusters, config }) {
       {config.mongodb && (
         <div className="row" style={{ marginBottom: 12, gap: 8 }}>
           <select className="mono" value={convId || ''} onChange={e => openConversation(e.target.value)}
-            style={{ background: '#00271C', color: '#E3FCF7', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxWidth: 420 }}>
+            style={{ background: '#003345', color: '#fafafa', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, padding: '6px 10px', fontSize: 12, maxWidth: 420 }}>
             <option value="">🕘 Histórico — nova conversa</option>
             {history.map(h => <option key={h.id} value={h.id}>{h.title} · {h.msg_count} msg{h.cluster ? ` · 📎 ${h.cluster}` : ''}</option>)}
           </select>
@@ -110,7 +110,7 @@ export default function Chat({ clusters, config }) {
 
       {msgs.length === 0 && (
         <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, color: '#889397', marginBottom: 10 }}>💡 Comece com uma pergunta:</div>
+          <div style={{ fontSize: 12, color: '#7fa8bc', marginBottom: 10 }}>💡 Comece com uma pergunta:</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
             {SUGGESTIONS.map((s, i) => (
               <button key={i} onClick={() => send(s)} className="suggestion-card">{s}</button>

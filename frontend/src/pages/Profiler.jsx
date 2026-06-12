@@ -77,7 +77,7 @@ export default function Profiler({ clusters, config }) {
 
   return (
     <>
-      <div className="page-head"><H1 style={{ color: '#E3FCF7' }}>Query Profiler</H1></div>
+      <div className="page-head"><H1 style={{ color: '#fafafa' }}>Query Profiler</H1></div>
       <div className="row" style={{ marginBottom: 18 }}>
         <ClusterPicker clusters={clusters} value={sel} onChange={setSel} />
         <Button variant="primary" onClick={load} disabled={busy}>{busy ? 'Buscando…' : '🔍 Carregar Slow Queries'}</Button>
@@ -89,22 +89,22 @@ export default function Profiler({ clusters, config }) {
       {rows && rows.length > 0 && (
         <>
           <KpiGrid>
-            <Kpi label="Query Shapes" value={rows.length} color="#FFC010" />
-            <Kpi label="Execuções Lentas" value={totalExec.toLocaleString('pt-BR')} color="#0498EC" />
+            <Kpi label="Query Shapes" value={rows.length} color="#f97316" />
+            <Kpi label="Execuções Lentas" value={totalExec.toLocaleString('pt-BR')} color="#06b6d4" />
             <Kpi label="COLLSCANs" value={collscans} delta={collscans ? 'sem índice' : '✓ nenhum'} color={collscans ? '#FF4444' : '#00ED64'} />
-            <Kpi label="Pior Latência" value={`${worst.toLocaleString('pt-BR')}ms`} color="#FF6960" />
+            <Kpi label="Pior Latência" value={`${worst.toLocaleString('pt-BR')}ms`} color="#ef4444" />
           </KpiGrid>
 
           {/* Filtros + ordenação */}
           <div className="row" style={{ marginBottom: 12 }}>
-            <span style={{ fontSize: 12, color: '#889397' }}>Filtrar:</span>
+            <span style={{ fontSize: 12, color: '#7fa8bc' }}>Filtrar:</span>
             {['all', 'read', 'write', 'collscan'].map(f => (
               <button key={f} onClick={() => setFilter(f)} className="chip" data-active={filter === f}>
                 {f === 'all' ? 'Todas' : f === 'read' ? '📖 Leitura' : f === 'write' ? '✏️ Escrita' : '🔴 COLLSCAN'}
               </button>
             ))}
             <span className="spacer" />
-            <span style={{ fontSize: 12, color: '#889397' }}>Ordenar:</span>
+            <span style={{ fontSize: 12, color: '#7fa8bc' }}>Ordenar:</span>
             <button onClick={() => setSort('dur')} className="chip" data-active={sort === 'dur'}>Latência</button>
             <button onClick={() => setSort('count')} className="chip" data-active={sort === 'count'}>Execuções</button>
           </div>
@@ -136,14 +136,14 @@ export default function Profiler({ clusters, config }) {
                       </td>
                       <td className="mono">{r.count.toLocaleString('pt-BR')}×</td>
                       <td className="mono">{r.maxDur.toLocaleString('pt-BR')} / {r.avgDur.toLocaleString('pt-BR')}ms</td>
-                      <td className="mono" style={{ color: '#889397' }}>{r.docs.toLocaleString('pt-BR')}</td>
+                      <td className="mono" style={{ color: '#7fa8bc' }}>{r.docs.toLocaleString('pt-BR')}</td>
                       <td><Button size="xsmall" onClick={() => setOpen(open === i ? null : i)}>{open === i ? 'fechar' : '🔬 plano'}</Button></td>
                     </tr>
                     {open === i && (
-                      <tr key={i + 'e'}><td colSpan={7} style={{ background: '#001016', padding: 16 }}>
-                        <div style={{ fontSize: 11, color: '#5C6C75', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Plano de execução capturado (slow query log)</div>
+                      <tr key={i + 'e'}><td colSpan={7} style={{ background: '#00141d', padding: 16 }}>
+                        <div style={{ fontSize: 11, color: '#6b94a8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Plano de execução capturado (slow query log)</div>
                         <div className="mono" style={{ fontSize: 12, color: '#C3E7DD', display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 12 }}>
-                          <span>plano: <b style={{ color: r.planRaw.includes('COLLSCAN') ? '#FF6960' : '#00ED64' }}>{r.planRaw}</b></span>
+                          <span>plano: <b style={{ color: r.planRaw.includes('COLLSCAN') ? '#ef4444' : '#00ED64' }}>{r.planRaw}</b></span>
                           <span>docs examinados: <b>{r.docs.toLocaleString('pt-BR')}</b></span>
                           <span>keys examinados: <b>{r.keys.toLocaleString('pt-BR')}</b></span>
                           <span>retornados: <b>{r.ret.toLocaleString('pt-BR')}</b></span>
@@ -154,9 +154,9 @@ export default function Profiler({ clusters, config }) {
                           <Badge variant={ratioBad ? 'red' : ratio > 10 ? 'yellow' : 'green'}>
                             Query Targeting: {ratio.toLocaleString('pt-BR')} docs escaneados por documento retornado
                           </Badge>
-                          {ratioBad && <span style={{ fontSize: 12, color: '#FF6960', marginLeft: 10 }}>← índice provavelmente faltando</span>}
+                          {ratioBad && <span style={{ fontSize: 12, color: '#ef4444', marginLeft: 10 }}>← índice provavelmente faltando</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: '#5C6C75', marginBottom: 4 }}>Query / comando:</div>
+                        <div style={{ fontSize: 11, color: '#6b94a8', marginBottom: 4 }}>Query / comando:</div>
                         <pre style={{ margin: 0, maxHeight: 200 }}>{JSON.stringify(r.filter, null, 2)}</pre>
                       </td></tr>
                     )}

@@ -6,7 +6,7 @@ export function ClusterPicker({ clusters, value, onChange }) {
       value={value?.cluster_name || ''}
       onChange={e => onChange(clusters.find(c => c.cluster_name === e.target.value))}
       style={{
-        background: '#00271C', color: '#E3FCF7', border: '1px solid rgba(0,237,100,0.22)',
+        background: '#003345', color: '#fafafa', border: '1px solid rgba(0,237,100,0.25)',
         borderRadius: 6, padding: '8px 12px', fontSize: 13, minWidth: 220,
       }}
     >
