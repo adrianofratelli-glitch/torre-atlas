@@ -1,7 +1,7 @@
 """
 populate_profiler_v2.py
-Popula Atlas Performance Advisor + Query Profiler com carga paralela.
-Target: 20-30 minutos de queries variadas para triggar sugestões de índice.
+Populates Atlas Performance Advisor + Query Profiler with a parallel workload.
+Target: 20-30 minutes of varied queries to trigger index suggestions.
 """
 
 import os
@@ -17,11 +17,11 @@ load_dotenv()
 URI = os.getenv("MONGODB_URI", "mongodb+srv://<user>:<pass>@<cluster>.mongodb.net/<database>")
 
 # ── CONFIG ────────────────────────────────────────────────────────────
-NUM_THREADS   = 8      # threads paralelas — M10/M20 aguenta bem
-DURATION_SECS = 25 * 60  # 25 minutos
-PRINT_EVERY   = 100    # print a cada N queries
+NUM_THREADS   = 8      # parallel threads — M10/M20 handles this fine
+DURATION_SECS = 25 * 60  # 25 minutes
+PRINT_EVERY   = 100    # print every N queries
 
-# ── DADOS ─────────────────────────────────────────────────────────────
+# ── DATA ──────────────────────────────────────────────────────────────
 ACCOUNT_NUMBERS = [
     "2659850271393050232", "2375809432101401449",
     "2326393752287659295", "2287996907938235286",
@@ -59,7 +59,7 @@ def run(label, cursor_or_result):
 
 # ── WORKER ────────────────────────────────────────────────────────────
 def worker():
-    # cada thread tem seu próprio client (thread-safe)
+    # each thread has its own client (thread-safe)
     cli = MongoClient(URI, serverSelectionTimeoutMS=10000)
     db  = cli["banco_inter"]
     fat = db["fatura"]
@@ -78,31 +78,31 @@ def worker():
         d_tx   = random.choice(DATES_TX)
         d_fat  = random.choice(DATES_FAT)
 
-        # 1. Full scan por tipo (sem índice útil)
+        # 1. Full scan by type (no useful index)
         run("tx type",  tx.find({"amos_mt_type": typ}).limit(200))
         run("fat type", fat.find({"amss_mt_type": typ}).limit(200))
 
-        # 2. Range em campo sem índice
+        # 2. Range on an unindexed field
         run("tx amt range",  tx.find({"amos_mt_amount": {"$gt": amt_lo, "$lt": amt_hi}}).limit(100))
         run("fat amt range", fat.find({"amss_mt_amount": {"$gt": amt_lo, "$lt": amt_hi}}).limit(100))
 
-        # 3. Account + sort sem índice composto → COLLSCAN + in-memory sort
+        # 3. Account + sort without a compound index → COLLSCAN + in-memory sort
         run("tx acc sort",  tx.find({"account_number": acc}).sort("amos_mt_amount", -1).limit(50))
         run("fat acc sort", fat.find({"account_number": acc}).sort("amss_mt_amount", -1).limit(50))
 
-        # 4. Categoria + segmento
+        # 4. Category + segment
         run("tx cat+seg",  tx.find({"amos_mt_category_code": cat, "segmento": seg}).limit(100))
         run("fat cat+seg", fat.find({"amss_mt_category_code": cat, "segmento": seg}).limit(100))
 
-        # 5. Plano + tipo
+        # 5. Plan + type
         run("tx plan+type",  tx.find({"amos_mt_plan": plan, "amos_mt_type": typ}).limit(100))
         run("fat plan+type", fat.find({"amss_mt_plan": plan, "amss_mt_type": typ}).limit(100))
 
-        # 6. Segmento + sort (in-memory sort caro)
+        # 6. Segment + sort (expensive in-memory sort)
         run("tx seg sort",  tx.find({"segmento": seg}).sort("amos_mt_amount", -1).limit(50))
         run("fat seg sort", fat.find({"segmento": seg}).sort("amss_mt_amount", -1).limit(50))
 
-        # 7. Multi-field sem índice composto
+        # 7. Multi-field without a compound index
         run("tx multi",  tx.find({"segmento": seg, "amos_mt_type": typ, "amos_mt_plan": plan}).limit(50))
         run("fat multi", fat.find({"segmento": seg, "amss_mt_type": typ, "amss_mt_plan": plan}).limit(50))
 
@@ -110,14 +110,14 @@ def worker():
         run("tx date",  tx.find({"amos_mt_eff_date":  {"$gte": d_tx[0],  "$lte": d_tx[1]}}).limit(100))
         run("fat date", fat.find({"amss_mt_eff_date": {"$gte": d_fat[0], "$lte": d_fat[1]}}).limit(100))
 
-        # 9. Installment + segmento
+        # 9. Installment + segment
         run("tx inst", tx.find({"amos_mt_inst_nbr": inst, "segmento": seg}).limit(80))
 
-        # 10. Regex (lentíssimo → ótimo pro Profiler)
+        # 10. Regex (very slow → great for the Profiler)
         run("tx regex",  tx.find({"amos_mt_desc":  {"$regex": f"^{prefix}", "$options": "i"}}).limit(30))
         run("fat regex", fat.find({"amss_mt_desc": {"$regex": f"^{prefix}", "$options": "i"}}).limit(30))
 
-        # 11. Aggregation: categoria por segmento
+        # 11. Aggregation: category by segment
         run("tx agg cat", tx.aggregate([
             {"$match": {"segmento": seg, "amos_mt_type": typ}},
             {"$group": {"_id": "$amos_mt_category_code",
@@ -136,7 +136,7 @@ def worker():
             {"$limit": 10}
         ]))
 
-        # 12. Aggregation: perfil por account
+        # 12. Aggregation: profile by account
         run("tx agg acc", tx.aggregate([
             {"$match": {"account_number": acc}},
             {"$group": {"_id": "$amos_mt_category_code",
@@ -156,7 +156,7 @@ def worker():
             {"$limit": 10}
         ]))
 
-        # 14. Aggregation: volume diário
+        # 14. Aggregation: daily volume
         run("tx agg diaria", tx.aggregate([
             {"$match": {"segmento": seg}},
             {"$group": {"_id": "$diaria_data",
@@ -166,7 +166,7 @@ def worker():
             {"$limit": 30}
         ]))
 
-        # 15. count sem índice
+        # 15. count without an index
         run("tx count seg",  tx.count_documents({"segmento": seg, "amos_mt_type": typ}))
         run("fat count seg", fat.count_documents({"segmento": seg, "amss_mt_type": typ}))
 

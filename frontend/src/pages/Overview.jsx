@@ -26,7 +26,7 @@ export default function Overview({ clusters }) {
   const regions = [...new Set(clusters.map(c => c.region_pretty))]
   const outdated = clusters.filter(c => parseInt(c.mongo_version) < 7).length
 
-  // Custo por projeto
+  // Cost per project
   const byProject = projects.map(p => ({
     name: p,
     cost: clusters.filter(c => c.project_name === p).reduce((s, c) => s + c.cost_usd, 0),
@@ -50,7 +50,7 @@ export default function Overview({ clusters }) {
              color={alerts === 0 ? '#00ED64' : '#f97316'} />
       </KpiGrid>
 
-      {/* Linha de chips informativos */}
+      {/* Row of informational chips */}
       <div className="row" style={{ marginBottom: 22, gap: 8 }}>
         <Badge variant={outdated ? 'yellow' : 'green'}>MongoDB: {versions.join(', ')}{outdated ? ` · ${outdated} desatualizado(s)` : ' · atualizado'}</Badge>
         <Badge variant="blue">{regions.length} região(ões): {regions.join(' · ')}</Badge>
@@ -58,7 +58,7 @@ export default function Overview({ clusters }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 24 }}>
-        {/* Frota */}
+        {/* Fleet */}
         <div>
           <Section title="Frota de Clusters" badge={String(clusters.length)} />
           {clusters.map(c => (
@@ -76,7 +76,7 @@ export default function Overview({ clusters }) {
           ))}
         </div>
 
-        {/* Custo por projeto */}
+        {/* Cost per project */}
         <div>
           <Section title="Custo por Projeto" badge="USD/mês" />
           <Card className="panel" darkMode>

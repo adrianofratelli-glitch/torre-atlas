@@ -16,8 +16,8 @@ const SUGGESTIONS = [
   'Como o WiredTiger usa o cache e por que isso afeta a performance?',
 ]
 
-// memo: durante o streaming só a última bolha muda — as anteriores não
-// re-parseiam o Markdown a cada chunk recebido
+// memo: during streaming only the last bubble changes — the previous ones don't
+// re-parse Markdown on every received chunk
 const Bubble = memo(function Bubble({ m }) {
   return (
     <div className={`bubble ${m.role}`}>
@@ -55,12 +55,12 @@ export default function Chat({ clusters, config }) {
       const messages = await getConversation(id)
       setMsgs(messages.map(m => ({ role: m.role, content: m.content })))
       setConvId(id)
-    } catch { /* conversa removida — lista será atualizada no próximo refresh */ }
+    } catch { /* conversation removed — list will be updated on the next refresh */ }
   }
 
   const removeConversation = async () => {
     if (!convId) return
-    try { await deleteConversation(convId) } catch { /* já removida */ }
+    try { await deleteConversation(convId) } catch { /* already removed */ }
     setMsgs([]); setConvId(null); refreshHistory()
   }
 
@@ -125,7 +125,7 @@ export default function Chat({ clusters, config }) {
       </div>
 
       <div className="row chat-input-bar">
-        {/* label oculto: a validação do LeafyGreen exige label/aria-labelledby (não aceita aria-label) */}
+        {/* hidden label: LeafyGreen validation requires label/aria-labelledby (does not accept aria-label) */}
         <span id="chat-input-label" style={{ display: 'none' }}>Mensagem para o chat</span>
         <div style={{ flex: 1 }}>
           <TextInput aria-labelledby="chat-input-label" placeholder="Pergunte sobre MongoDB Atlas, performance, indexação…"

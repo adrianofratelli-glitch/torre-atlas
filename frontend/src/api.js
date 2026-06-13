@@ -1,4 +1,4 @@
-// api.js — cliente axios para o backend FastAPI do Torre
+// api.js — axios client for Torre's FastAPI backend
 import axios from 'axios'
 
 const http = axios.create({ baseURL: '/api', timeout: 60000 })
@@ -20,12 +20,12 @@ export const createIndex    = (namespace, indexKeys) => http.post('/index', { na
 export const getFinops      = () => http.get('/finops').then(r => r.data)
 export const explainQuery   = (namespace, filter) => http.post('/explain', { namespace, filter }).then(r => r.data)
 
-// Histórico de conversas (persistido no Atlas — requer MONGODB_URI no backend)
+// Conversation history (persisted in Atlas — requires MONGODB_URI on the backend)
 export const listConversations  = (q = '') => http.get('/chat/conversations', { params: { q } }).then(r => r.data.conversations)
 export const getConversation    = (id) => http.get(`/chat/conversations/${id}`).then(r => r.data.messages)
 export const deleteConversation = (id) => http.delete(`/chat/conversations/${id}`).then(r => r.data)
 
-// Streaming helpers (fetch para ler chunks de texto)
+// Streaming helpers (fetch to read text chunks)
 async function* streamPost(url, payload, onResponse) {
   const res = await fetch(url, {
     method: 'POST',
@@ -34,7 +34,7 @@ async function* streamPost(url, payload, onResponse) {
   })
   if (!res.ok || !res.body) {
     let detail = `Erro HTTP ${res.status}`
-    try { detail = (await res.json()).detail || detail } catch { /* corpo não-JSON */ }
+    try { detail = (await res.json()).detail || detail } catch { /* non-JSON body */ }
     throw new Error(detail)
   }
   onResponse?.(res)
@@ -53,7 +53,7 @@ export const streamChat = (messages, project_id, cluster_name, conversation_id, 
 export const streamAnalyze = (project_id, cluster_name) =>
   streamPost('/api/analyze', { project_id, cluster_name })
 
-// Baixa o relatório PDF (ou Markdown, se fpdf2 indisponível) da análise
+// Downloads the analysis report as PDF (or Markdown, if fpdf2 is unavailable)
 export async function downloadReport(cluster_name, analysis, health_score = null, health_issues = null) {
   const res = await fetch('/api/report', {
     method: 'POST',

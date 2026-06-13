@@ -1,4 +1,4 @@
-// Seletor de cluster reutilizável (select nativo estilizado MongoDB)
+// Reusable cluster selector (native select styled MongoDB-like)
 export function ClusterPicker({ clusters, value, onChange }) {
   return (
     <select

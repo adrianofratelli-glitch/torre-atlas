@@ -29,7 +29,7 @@ export default function Health({ clusters }) {
       {!hs && <Empty icon="🏥" title="Avalie a saúde do cluster" hint="Clique em Calcular Health Score para uma nota 0–100 com o detalhamento de cada componente e como melhorar." />}
       {hs && (
         <>
-          {/* Nota grande + grade */}
+          {/* Large score + grade */}
           <div className="row" style={{ gap: 24, alignItems: 'stretch', marginBottom: 8 }}>
             <Card className="panel" darkMode style={{ textAlign: 'center', minWidth: 200 }}>
               <div className="mono" style={{ fontSize: 64, fontWeight: 800, color: hs.color, lineHeight: 1 }}>{hs.grade}</div>
@@ -52,7 +52,7 @@ export default function Health({ clusters }) {
             </Card>
           </div>
 
-          {/* Como melhorar */}
+          {/* How to improve */}
           <Section title="Como melhorar a nota" badge={`+${hs.tips.reduce((s, t) => s + t.gain, 0)} pts possíveis`} badge_color="green" />
           {hs.tips.map((t, i) => (
             <Banner key={i} variant={t.gain > 0 ? 'warning' : 'success'} style={{ marginBottom: 8 }}>

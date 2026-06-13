@@ -1,16 +1,14 @@
-# React + Vite
+# Torre — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 18 + Vite, built with [LeafyGreen](https://www.mongodb.design/), MongoDB's official design system. Talks to the FastAPI backend through the `/api` proxy.
 
-Currently, two official plugins are available:
+See the [root README](../README.md) for full setup and architecture. The usual way to run the project is `./run_react.sh` from the repository root, which starts the backend and this frontend together.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Frontend-only commands
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm install      # install dependencies
+npm run dev      # start the Vite dev server
+npm run build    # production build
+npm run preview  # preview the production build
+```

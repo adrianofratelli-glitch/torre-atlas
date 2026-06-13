@@ -14,7 +14,7 @@ export default function PerformanceAdvisor({ clusters, config }) {
   const [busyAI, setBusyAI] = useState(false)
   const [err, setErr] = useState(null)
   const [analysis, setAnalysis] = useState('')
-  const [idxMsg, setIdxMsg] = useState(null)   // { i, ok, text } — resultado do createIndex por card
+  const [idxMsg, setIdxMsg] = useState(null)   // { i, ok, text } — createIndex result per card
 
   const load = async () => {
     setBusy(true); setErr(null); setData(null); setAnalysis(''); setIdxMsg(null)

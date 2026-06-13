@@ -1,4 +1,4 @@
-// components.jsx — blocos reutilizáveis no estilo MongoDB Atlas
+// components.jsx — reusable MongoDB Atlas-style building blocks
 import { Body } from '@leafygreen-ui/typography'
 
 export function Leaf({ size = 28, color = '#00ED64' }) {
@@ -48,11 +48,11 @@ export function Empty({ icon, title, hint }) {
   )
 }
 
-// Mini gráfico SVG (CPU área + queries linha) — leve, compacto, altura fixa
+// Mini SVG chart (CPU area + queries line) — lightweight, compact, fixed height
 export function MiniChart({ series, height = 160 }) {
   if (!series || series.error || !series.timestamps || series.timestamps.length === 0)
     return <div className="empty" style={{ padding: 22 }}>Sem dados históricos disponíveis.</div>
-  const w = 1000, h = 300, pad = 6   // viewBox interno; render usa height fixo
+  const w = 1000, h = 300, pad = 6   // internal viewBox; render uses fixed height
   const cpu = series.cpu || []
   const q = series.ops_query || []
   const n = cpu.length

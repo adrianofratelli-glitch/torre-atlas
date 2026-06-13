@@ -1,9 +1,9 @@
 """
-chat_memory.py — Chat history persistido no MongoDB Atlas
+chat_memory.py — Chat history persisted in MongoDB Atlas
 Showcases: Document Model · Embedded Arrays · Text Index · Aggregation
 
-Coleção: torre.chat_history
-Estrutura:
+Collection: torre.chat_history
+Structure:
 {
   "_id": ObjectId,
   "cluster":    "inter",
@@ -28,7 +28,7 @@ COLL_NAME = "chat_history"
 
 _clients: dict = {}
 
-# ── Conexão ───────────────────────────────────────────────────────────────────
+# ── Connection ────────────────────────────────────────────────────────────────
 def _get_collection(mongo_uri: str) -> Collection:
     if mongo_uri not in _clients:
         _clients[mongo_uri] = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
@@ -36,12 +36,12 @@ def _get_collection(mongo_uri: str) -> Collection:
 
 
 def init_db(mongo_uri: str):
-    """Garante índices na coleção. Idempotente."""
+    """Ensure indexes exist on the collection. Idempotent."""
     coll = _get_collection(mongo_uri)
 
     existing = {idx["name"] for idx in coll.list_indexes()}
 
-    # Text index para busca semântica simples nas mensagens e título
+    # Text index for simple semantic search over messages and title
     if "text_search" not in existing:
         coll.create_index(
             [("title", TEXT), ("messages.content", TEXT)],
@@ -49,18 +49,18 @@ def init_db(mongo_uri: str):
             default_language="portuguese",
         )
 
-    # Índice para listagem recente (ordenação por updated_at)
+    # Index for recent listing (sorted by updated_at)
     if "updated_at_desc" not in existing:
         coll.create_index([("updated_at", DESCENDING)], name="updated_at_desc")
 
-    # Índice por cluster (filtro por contexto)
+    # Index by cluster (context filter)
     if "cluster_idx" not in existing:
         coll.create_index([("cluster", DESCENDING)], name="cluster_idx")
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 def new_conversation(mongo_uri: str, cluster: str = "") -> str:
-    """Cria uma nova conversa. Retorna o _id como string."""
+    """Create a new conversation. Returns the _id as a string."""
     now  = datetime.now(timezone.utc)
     doc  = {
         "cluster":    cluster,
@@ -75,8 +75,8 @@ def new_conversation(mongo_uri: str, cluster: str = "") -> str:
 
 def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, elapsed_ms: int = 0):
     """
-    Faz $push da mensagem no array embutido e $set no updated_at.
-    Demonstra o poder do Document Model — sem tabela separada de mensagens.
+    $push the message into the embedded array and $set updated_at.
+    Demonstrates the power of the Document Model — no separate messages table.
     """
     now = datetime.now(timezone.utc)
     msg = {"role": role, "content": content, "elapsed_ms": elapsed_ms, "ts": now}
@@ -86,10 +86,10 @@ def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, e
         "$set":  {"updated_at": now},
     }
 
-    # Auto-título: usa a 1ª mensagem do usuário
+    # Auto-title: uses the user's first message
     if role == "user":
         title = content[:70] + ("…" if len(content) > 70 else "")
-        # Só seta título se ainda for "Nova Conversa"
+        # Only set the title if it is still "Nova Conversa"
         _get_collection(mongo_uri).update_one(
             {"_id": ObjectId(conversation_id), "title": "Nova Conversa"},
             {"$set": {"title": title}},
@@ -102,7 +102,7 @@ def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, e
 
 
 def load_messages(mongo_uri: str, conversation_id: str) -> List[Dict]:
-    """Retorna as mensagens de uma conversa. Array embutido = 1 leitura."""
+    """Return a conversation's messages. Embedded array = a single read."""
     doc = _get_collection(mongo_uri).find_one(
         {"_id": ObjectId(conversation_id)},
         {"messages": 1, "cluster": 1},
@@ -114,8 +114,8 @@ def load_messages(mongo_uri: str, conversation_id: str) -> List[Dict]:
 
 def list_conversations(mongo_uri: str, cluster: str = "", limit: int = 25) -> List[Dict]:
     """
-    Lista conversas recentes com contagem de mensagens via $size.
-    Aggregation pipeline demonstra poder do MongoDB para analytics.
+    List recent conversations with message count via $size.
+    The aggregation pipeline demonstrates MongoDB's power for analytics.
     """
     coll     = _get_collection(mongo_uri)
     match    = {"cluster": cluster} if cluster else {}
@@ -139,8 +139,8 @@ def list_conversations(mongo_uri: str, cluster: str = "", limit: int = 25) -> Li
 
 def search_conversations(mongo_uri: str, query: str, limit: int = 8) -> List[Dict]:
     """
-    Full-text search via índice de texto do MongoDB.
-    Demonstra Atlas Text Search sem Elasticsearch.
+    Full-text search via MongoDB's text index.
+    Demonstrates Atlas Text Search without Elasticsearch.
     """
     coll = _get_collection(mongo_uri)
     docs = coll.find(
@@ -153,13 +153,13 @@ def search_conversations(mongo_uri: str, query: str, limit: int = 8) -> List[Dic
 
 
 def delete_conversation(mongo_uri: str, conversation_id: str):
-    """Deleta uma conversa por ID."""
+    """Delete a conversation by ID."""
     _get_collection(mongo_uri).delete_one({"_id": ObjectId(conversation_id)})
 
 
-# ── Utilitários ───────────────────────────────────────────────────────────────
+# ── Utilities ─────────────────────────────────────────────────────────────────
 def format_relative_time(dt) -> str:
-    """Converte datetime para texto relativo (ex: 'há 2h')."""
+    """Convert a datetime to relative text (e.g. 'há 2h')."""
     try:
         if isinstance(dt, str):
             dt = datetime.fromisoformat(dt)

@@ -1,10 +1,10 @@
 """
-api.py — Torre Atlas Control Plane · Backend FastAPI
-Expõe a lógica Python (atlas_client / ai_agent / chat_memory) como REST API
-para o frontend React + LeafyGreen consumir via axios.
+api.py — Torre Atlas Control Plane · FastAPI backend
+Exposes the Python logic (atlas_client / ai_agent / chat_memory) as a REST API
+for the React + LeafyGreen frontend to consume via axios.
 
-Credenciais vêm SEMPRE do ambiente (.env) — nunca do frontend.
-Rode com:  uvicorn api:app --reload --port 8000
+Credentials ALWAYS come from the environment (.env) — never from the frontend.
+Run with:  uvicorn api:app --reload --port 8000
 """
 
 import os
@@ -71,7 +71,7 @@ def calculate_health_score(status: str, n_pa: int, n_sq: int, mongo_version: str
     return {"score": score, "grade": grade, "color": color, "issues": issues}
 
 
-# ── Atlas client (singleton a partir do ambiente) ─────────────────────────────
+# ── Atlas client (singleton built from the environment) ───────────────────────
 def get_client() -> AtlasClient:
     pub  = os.getenv("ATLAS_PUBLIC_KEY", "")
     priv = os.getenv("ATLAS_PRIVATE_KEY", "")
@@ -95,7 +95,7 @@ app.add_middleware(
 )
 
 
-# ── MongoDB (cliente cacheado — pool de conexões reusado entre requests) ──────
+# ── MongoDB (cached client — connection pool reused across requests) ──────────
 _mongo_clients: dict = {}
 
 def _mongo(uri: str):
@@ -108,7 +108,7 @@ def _mongo(uri: str):
 # ── Health / config ───────────────────────────────────────────────────────────
 @app.get("/api/config")
 def config():
-    """Quais integrações estão configuradas no servidor (sem expor segredos)."""
+    """Which integrations are configured on the server (without exposing secrets)."""
     return {
         "atlas":     bool(os.getenv("ATLAS_PUBLIC_KEY") and os.getenv("ATLAS_PRIVATE_KEY")),
         "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -173,7 +173,7 @@ def invoice():
     return {"amount_usd": inv.get("amountBilledCents", 0) / 100 if inv else 0}
 
 
-# ── Performance Advisor / Profiler / Métricas ─────────────────────────────────
+# ── Performance Advisor / Profiler / Metrics ──────────────────────────────────
 def _primary_or_404(client, project_id, cluster_name):
     pid = client.get_primary(project_id, cluster_name)
     if not pid:
@@ -222,7 +222,7 @@ def health(project_id: str, cluster_name: str, status: str = "", mongo_version: 
             pass
     hs = calculate_health_score(status, n_pa, n_sq, mongo_version)
 
-    # Breakdown por componente (quanto cada um contribui / desconta)
+    # Per-component breakdown (how much each one adds / deducts)
     try:
         major = int(str(mongo_version).split(".")[0])
     except Exception:
@@ -243,7 +243,7 @@ def health(project_id: str, cluster_name: str, status: str = "", mongo_version: 
          "ok": major >= 7},
         {"label": "Base", "earned": 10, "max": 10, "detail": "pontuação base", "ok": True},
     ]
-    # Recomendações acionáveis para melhorar a nota
+    # Actionable recommendations to improve the score
     tips = []
     if n_pa > 0:
         tips.append({"gain": min(n_pa * 5, 30), "text": f"Crie os {n_pa} índice(s) sugeridos no **Performance Advisor** — recupera até +{min(n_pa*5,30)} pts."})
@@ -261,7 +261,7 @@ def health(project_id: str, cluster_name: str, status: str = "", mongo_version: 
 
 @app.get("/api/finops")
 def finops():
-    """Avalia eficiência de custo (custo vs utilização real de CPU) por cluster."""
+    """Evaluates cost efficiency (cost vs. actual CPU utilization) per cluster."""
     client = get_client()
     out = []
     try:
@@ -286,7 +286,7 @@ def finops():
                 m = client.get_measurements(proj["id"], pid) if pid else {}
                 cpu = m.get("cpu_pct") if m and "error" not in m else None
             cost = AtlasClient.estimate_cost(tier, USD_BRL)
-            # Veredito de eficiência: custo alto + CPU baixa = desperdício
+            # Efficiency verdict: high cost + low CPU = waste
             verdict, color = "sem dados", "muted"
             if cpu is not None:
                 if cpu < 15 and cost["usd"] >= 389:      # M30+
@@ -314,7 +314,7 @@ def scaling(project_id: str, cluster_name: str, tier: str):
     return AtlasClient.recommend_scaling(meas, tier)
 
 
-# ── Scale / Index (ações) ─────────────────────────────────────────────────────
+# ── Scale / Index (actions) ───────────────────────────────────────────────────
 class ScaleBody(BaseModel):
     new_tier: str
 
@@ -338,7 +338,7 @@ class ExplainBody(BaseModel):
 
 @app.post("/api/explain")
 def explain_query(body: ExplainBody):
-    """Roda explain('executionStats') real via pymongo no filtro informado."""
+    """Runs a real explain('executionStats') via pymongo on the given filter."""
     uri = os.getenv("MONGODB_URI", "")
     if not uri:
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
@@ -376,7 +376,7 @@ def cost(tier: str):
     return AtlasClient.estimate_cost(tier, USD_BRL)
 
 
-# ── AI: análise (stream) e chat (stream) ──────────────────────────────────────
+# ── AI: analysis (stream) and chat (stream) ───────────────────────────────────
 class AnalyzeBody(BaseModel):
     project_id: str
     cluster_name: str
@@ -407,7 +407,7 @@ class ChatBody(BaseModel):
 _chat_db_ready = False
 
 def _ensure_chat_db(uri: str):
-    """Garante os índices da coleção de histórico uma única vez por processo."""
+    """Ensures the history collection's indexes exist, once per process."""
     global _chat_db_ready
     if not _chat_db_ready:
         from chat_memory import init_db
@@ -417,7 +417,7 @@ def _ensure_chat_db(uri: str):
 
 @app.post("/api/chat")
 def chat(body: ChatBody):
-    # SEMPRE há system prompt (âncora MongoDB Atlas) — sem ele o modelo responde genérico.
+    # There is ALWAYS a system prompt (MongoDB Atlas anchor) — without it the model answers generically.
     system = build_chat_system_prompt()
     if body.project_id and body.cluster_name:
         client = get_client()
@@ -428,7 +428,7 @@ def chat(body: ChatBody):
         meas = client.get_measurements(body.project_id, pid) if pid else {}
         system = build_chat_system_prompt(full_c, pa, sq, meas)
 
-    # Persistência no Atlas (best-effort — chat funciona mesmo sem MONGODB_URI)
+    # Atlas persistence (best-effort — chat works even without MONGODB_URI)
     uri = os.getenv("MONGODB_URI", "")
     conv_id = body.conversation_id
     user_msg = body.messages[-1].get("content", "") if body.messages else ""
@@ -463,7 +463,7 @@ def chat(body: ChatBody):
     return StreamingResponse(gen(), media_type="text/plain", headers=headers)
 
 
-# ── Relatório PDF da análise (branding MongoDB, fallback Markdown) ────────────
+# ── Analysis PDF report (MongoDB branding, Markdown fallback) ─────────────────
 class ReportBody(BaseModel):
     cluster_name: str
     analysis: str
@@ -481,7 +481,7 @@ def report(body: ReportBody):
     )
 
 
-# ── Chat history (persistência no Atlas, opcional) ────────────────────────────
+# ── Chat history (Atlas persistence, optional) ────────────────────────────────
 def _mongo_or_400():
     uri = os.getenv("MONGODB_URI", "")
     if not uri:

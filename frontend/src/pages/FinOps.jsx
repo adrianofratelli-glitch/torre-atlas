@@ -15,7 +15,7 @@ export default function FinOps({ clusters }) {
 
   useEffect(() => { getFinops().then(setData).catch(() => setData({ clusters: [], total_usd: 0, potential_savings_usd: 0 })).finally(() => setBusy(false)) }, [])
 
-  // Totais vêm direto dos clusters (instantâneo) — independem do /finops lento
+  // Totals come straight from the clusters (instant) — independent of the slow /finops
   const totalBrl = clusters.reduce((s, c) => s + c.cost_brl, 0)
   const totalUsd = clusters.reduce((s, c) => s + c.cost_usd, 0)
   const avg = clusters.length ? totalBrl / clusters.length : 0
@@ -23,7 +23,7 @@ export default function FinOps({ clusters }) {
   const overprov = measured.filter(c => c.color === 'yellow')
   const saturated = measured.filter(c => c.color === 'red')
 
-  // Veredito global do projeto
+  // Project-wide verdict
   let verdict = { variant: 'success', text: '✅ Custos saudáveis — a utilização justifica o investimento.' }
   if (saturated.length) verdict = { variant: 'warning', text: `⚠️ ${saturated.length} cluster(s) saturado(s) — pode ser hora de scale up para manter performance.` }
   else if (overprov.length) verdict = { variant: 'info', text: `💡 ${overprov.length} cluster(s) subutilizado(s) — possível economia de ~$${fmt(data.potential_savings_usd)}/mês com scale down.` }

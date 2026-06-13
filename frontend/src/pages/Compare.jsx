@@ -49,8 +49,8 @@ export default function Compare({ clusters }) {
     ['MongoDB', data.a.mongo_version, data.b.mongo_version, 'high', v => v],
   ] : []
 
-  // Compara versões segmento a segmento ("7.0.28" vs "8.0.5") — parseFloat
-  // descartaria o patch e empataria "7.0.2" com "7.0.28"
+  // Compares versions segment by segment ("7.0.28" vs "8.0.5") — parseFloat
+  // would drop the patch and tie "7.0.2" with "7.0.28"
   const cmpVersion = (va, vb) => {
     const sa = String(va).split('.').map(Number), sb = String(vb).split('.').map(Number)
     for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
@@ -73,10 +73,10 @@ export default function Compare({ clusters }) {
     }
     if (diff === 0) return 0
     if (better === 'high') return diff > 0 ? -1 : 1
-    return diff < 0 ? -1 : 1   // low is better
+    return diff < 0 ? -1 : 1   // lower is better
   }
 
-  // Resumo: quem venceu mais métricas
+  // Summary: who won more metrics
   let scoreA = 0, scoreB = 0
   metrics.forEach(([, va, vb, better]) => { const w = winner(va, vb, better); if (w < 0) scoreA++; if (w > 0) scoreB++ })
 

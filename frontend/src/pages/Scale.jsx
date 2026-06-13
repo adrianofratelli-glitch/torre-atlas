@@ -61,7 +61,7 @@ export default function Scale({ clusters, config }) {
         <Kpi label="Custo Atual/Mês" value={`R$ ${sel.cost_brl.toLocaleString('pt-BR')}`} delta={`≈ USD ${sel.cost_usd.toLocaleString('pt-BR')}`} />
       </KpiGrid>
 
-      {/* ── Métricas-chave que regem o scaling: CPU · Memória · Storage ── */}
+      {/* ── Key metrics that govern scaling: CPU · Memory · Storage ── */}
       <Section title="Métricas de Scaling" sub="as 3 dimensões que definem o tier" />
       {loading && <Body style={{ color: '#7fa8bc' }}>Analisando métricas do cluster…</Body>}
       {rec?.metrics && (
@@ -77,7 +77,7 @@ export default function Scale({ clusters, config }) {
         </div>
       )}
 
-      {/* ── Recomendação: por que escalar (ou não) ── */}
+      {/* ── Recommendation: why to scale (or not) ── */}
       <Section title="Recomendação Inteligente" sub="baseada em CPU · memória · storage · conexões reais" />
       {rec && rec.headline && (
         <Banner variant={recColor} style={{ marginBottom: 8 }}>
@@ -96,7 +96,7 @@ export default function Scale({ clusters, config }) {
       <Section title="Carga 24h" badge={sel.cluster_name} />
       <MiniChart series={series} height={150} />
 
-      {/* ── Simulador de tier com custo ── */}
+      {/* ── Tier simulator with cost ── */}
       <Section title="Simular Mudança de Tier" />
       <Card className="panel" darkMode>
         <div className="row" style={{ alignItems: 'flex-end', gap: 18 }}>
@@ -137,7 +137,7 @@ export default function Scale({ clusters, config }) {
   )
 }
 
-// Barra de métrica com cor por gravidade (verde → amarelo → vermelho)
+// Metric bar with color by severity (green → yellow → red)
 function MetricBar({ label, pct, sub, warn = 75, crit = 90 }) {
   const v = Math.max(0, Math.min(100, pct || 0))
   const color = v >= crit ? '#F87171' : v >= warn ? '#FACC15' : '#00ED64'

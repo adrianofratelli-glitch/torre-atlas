@@ -1,7 +1,8 @@
-# 🗼 Torre — Atlas Control Plane
+# Torre — Atlas Control Plane
 
-> Dashboard operacional para MongoDB Atlas com IA integrada (Claude) — a torre de controle da sua frota de clusters.
-> **Frontend** React + [LeafyGreen](https://www.mongodb.design/) (design system oficial MongoDB) · **Backend** FastAPI reusando a lógica Python.
+Operational dashboard for MongoDB Atlas with a built-in Claude assistant. A single control plane for a fleet of clusters: status, cost, performance, and AI-assisted analysis.
+
+The frontend is React with [LeafyGreen](https://www.mongodb.design/), MongoDB's official design system. The backend is FastAPI, exposing the existing Python logic as a REST API.
 
 ![React](https://img.shields.io/badge/React-18-blue)
 ![LeafyGreen](https://img.shields.io/badge/LeafyGreen-MongoDB-00ED64)
@@ -9,101 +10,99 @@
 ![Claude](https://img.shields.io/badge/Claude-Sonnet_4.6-orange)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
----
+> Note: the user interface is in Brazilian Portuguese (pt-BR) by design, since this was built for a Brazilian audience. Source code, comments, and documentation are in English.
 
-## 🏗️ Arquitetura
+## Architecture
 
 ```
 ┌────────────────────────┐   /api proxy   ┌───────────────────────────┐
 │  React 18 + Vite        │ ─────────────► │  FastAPI (api.py)          │
-│  LeafyGreen (MongoDB)   │   :WEB → :API  │  atlas_client / ai_agent / │
-│  darkMode               │ ◄───────────── │  chat_memory               │
+│  LeafyGreen (MongoDB)   │   WEB → API    │  atlas_client / ai_agent / │
+│  dark mode              │ ◄───────────── │  chat_memory               │
 └────────────────────────┘                └─────────────┬─────────────┘
                                                          ▼
                                               MongoDB Atlas (Admin API v2)
 ```
 
-- **Credenciais ficam só no backend** (`.env`) — o frontend nunca as vê.
-- Portas **auto-detectadas** (livres) para não colidir com outras POCs.
+Credentials live only in the backend (`.env`); the frontend never sees them. The startup script auto-detects free ports so Torre does not collide with other local services.
 
-## ✨ Funcionalidades
+## Features
 
-| Página | Descrição |
-|--------|-----------|
-| 📊 **Visão Geral** | Snapshot estático e rápido da frota (clusters, status, custo, alertas) |
-| 🗄️ **Clusters** | Tabela de todos os clusters da org com tier, região, status e custo |
-| ⚡ **Performance Advisor** | Índices sugeridos + execução via pymongo + análise com Claude + relatório PDF |
-| 🔍 **Query Profiler** | Slow queries parseadas (plano, COLLSCAN, docs examinados, latência) |
-| ❤️ **Health Score** | Nota 0–100 combinando PA, slow queries, status e versão |
-| 📈 **Scale** | Recomendação inteligente (CPU/conexões/IOPS reais) + gráfico 24h + scaling |
-| 💰 **FinOps** | Estimativa de custo por cluster e projeto |
-| 📊 **Compare** | Comparativo side-by-side entre 2 clusters |
-| 💬 **AI Chat** | Chat com Claude usando contexto real do cluster (streaming) + histórico persistido no Atlas |
+| Page | Description |
+|------|-------------|
+| Overview | Fast static snapshot of the fleet: clusters, status, cost, and alerts. |
+| Clusters | Table of every cluster in the org with tier, region, status, and cost. |
+| Performance Advisor | Suggested indexes, execution via pymongo, Claude analysis, and a PDF report. |
+| Query Profiler | Parsed slow queries (plan, COLLSCAN, documents examined, latency). |
+| Health Score | A 0–100 score combining Performance Advisor, slow queries, status, and version. |
+| Scale | Tier recommendation from real CPU, connection, and IOPS metrics, with a 24h chart. |
+| FinOps | Cost estimate per cluster and per project. |
+| Compare | Side-by-side comparison of two clusters. |
+| AI Chat | Claude chat grounded in real cluster context (streaming), with history persisted in Atlas. |
 
----
+## Getting started
 
-## 🚀 Como rodar
+### Prerequisites
 
-### Pré-requisitos
-- Python 3.10+ · Node 18+ · Conta MongoDB Atlas · API Key Anthropic
+Python 3.10+, Node 18+, a MongoDB Atlas account, and an Anthropic API key.
 
-### 1. Configure o `.env`
+### 1. Configure the environment
+
 ```bash
-cp env_template.txt .env   # edite com suas chaves
+cp .env.example .env   # then fill in your keys
 ```
+
 ```env
 ATLAS_PUBLIC_KEY=...
 ATLAS_PRIVATE_KEY=...
 ATLAS_ORG_ID=...
 ANTHROPIC_API_KEY=...
-MONGODB_URI=mongodb+srv://...   # opcional (criar índices + histórico do chat)
-CLAUDE_MODEL=claude-sonnet-4-6  # opcional (default; ex: claude-opus-4-8)
+MONGODB_URI=mongodb+srv://...   # optional: index creation and chat history
+CLAUDE_MODEL=claude-sonnet-4-6  # optional: defaults to Sonnet 4.6
 ```
 
-### 2. Suba tudo com um comando
+### 2. Run
+
 ```bash
 ./run_react.sh
 ```
-O script ativa o venv, instala dependências se necessário, **acha portas livres** e sobe backend + frontend juntos. URLs aparecem no terminal.
 
-> Atalho opcional no `~/.zshrc`:
-> ```bash
-> alias torre="cd ~/torre && source venv/bin/activate && ./run_react.sh"
-> ```
-> Depois é só digitar `torre`.
+The script activates the virtualenv, installs dependencies if needed, finds free ports, and starts the backend and frontend together. The URLs are printed to the terminal.
 
-### Portas
-Defaults incomuns **8765** (API) / **5290** (UI), configuráveis:
+Optional shell alias:
+
+```bash
+alias torre="cd ~/torre && source venv/bin/activate && ./run_react.sh"
+```
+
+### Ports
+
+The defaults are 8765 (API) and 5290 (UI). Override them with environment variables:
+
 ```bash
 API_PORT=8770 WEB_PORT=5295 ./run_react.sh
 ```
 
----
-
-## 🗂️ Estrutura
+## Project layout
 
 ```
 torre/
-├── api.py                # Backend FastAPI — expõe a lógica como REST
-├── atlas_client.py       # Client da Atlas Admin API v2 + recomendação de scaling
-├── ai_agent.py           # Claude (streaming) — análise + chat + PDF
-├── chat_memory.py        # Persistência do chat no Atlas (pymongo)
-├── requirements.txt      # Deps do backend
-├── run_react.sh          # Sobe backend + frontend (portas livres)
+├── api.py                # FastAPI backend; exposes the Python logic as REST
+├── atlas_client.py       # Atlas Admin API v2 client and scaling recommendations
+├── ai_agent.py           # Claude analysis, chat, and PDF generation (streaming)
+├── chat_memory.py        # Chat history persisted in Atlas (pymongo)
+├── requirements.txt      # Backend dependencies
+├── run_react.sh          # Starts backend + frontend on free ports
 └── frontend/             # React 18 + Vite + LeafyGreen
-    ├── src/api.js         # Cliente axios + streaming
-    ├── src/App.jsx        # Shell + navegação
-    └── src/pages/         # 9 páginas
+    ├── src/api.js         # Axios client and streaming
+    ├── src/App.jsx        # Shell and navigation
+    └── src/pages/         # One component per page
 ```
 
----
+## Credits
 
-## 🙏 Créditos
+Torre is based on Maestro, originally created by [Carime](https://github.com/carimeb) ([maestro-atlas-landing-zone](https://github.com/carimeb/maestro-atlas-landing-zone)). Thanks to her for the foundation.
 
-O Torre foi baseado no **[Maestro](https://github.com/carimeb/maestro-atlas-landing-zone)**, projeto original criado pela **[Carime](https://github.com/carimeb)** — obrigado pela base e inspiração! 💚
+## License
 
-## 📄 Licença
-
-MIT — veja [LICENSE](LICENSE).
-
-*Construído para demonstrar o poder do MongoDB Atlas em aplicações financeiras de alto volume.*
+MIT. See [LICENSE](LICENSE).

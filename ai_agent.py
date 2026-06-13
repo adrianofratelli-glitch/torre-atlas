@@ -7,12 +7,12 @@ import os
 import anthropic
 from typing import Iterator
 
-# Sonnet 4.6 = melhor custo/velocidade para a demo; troque via .env (ex: claude-opus-4-8)
+# Sonnet 4.6 = best cost/speed for the demo; override via .env (e.g. claude-opus-4-8)
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ONE-SHOT ANALYSIS (original, mantido)
+# ONE-SHOT ANALYSIS (original, kept)
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _build_analysis_prompt(cluster: dict, pa_data: dict, slow_queries: dict) -> str:
@@ -127,7 +127,7 @@ def build_chat_system_prompt(
         f"- Status: {cluster_data.get('stateName', 'N/A')} | MongoDB: {cluster_data.get('mongoDBVersion', 'N/A')}\n"
     )
 
-    # ── Métricas de hardware (últimos 10min) ──
+    # ── Hardware metrics (last 10 min) ──
     if measurements and "error" not in measurements:
         cpu   = measurements.get("cpu_pct", 0)
         m_use = measurements.get("memory_used_gb", 0)
@@ -190,7 +190,7 @@ def stream_chat(messages: list, system_prompt: str = "") -> Iterator[str]:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _markdown_report(cluster_name, analysis_text, health_score, health_issues) -> bytes:
-    """Fallback: relatório em Markdown puro."""
+    """Fallback: plain Markdown report."""
     from datetime import datetime
     lines = [
         "# Torre — Atlas Report",
@@ -215,8 +215,8 @@ def generate_pdf_report(
     health_issues: list = None,
 ) -> tuple:
     """
-    Gera um relatório PDF real (via fpdf2) com branding MongoDB.
-    Retorna (bytes, mime, extensão). Faz fallback para Markdown se fpdf2 falhar.
+    Generates a real PDF report (via fpdf2) with MongoDB branding.
+    Returns (bytes, mime, extension). Falls back to Markdown if fpdf2 fails.
     """
     from datetime import datetime
     try:
@@ -224,7 +224,7 @@ def generate_pdf_report(
     except ImportError:
         return _markdown_report(cluster_name, analysis_text, health_score, health_issues), "text/markdown", "md"
 
-    # Sanitiza para Latin-1 (fpdf2 core fonts não suportam todos os emojis/unicode)
+    # Sanitize to Latin-1 (fpdf2 core fonts don't support all emojis/unicode)
     def _safe(s: str) -> str:
         return (s or "").encode("latin-1", "replace").decode("latin-1")
 
@@ -233,7 +233,7 @@ def generate_pdf_report(
         pdf.set_auto_page_break(auto=True, margin=18)
         pdf.add_page()
 
-        # ── Header faixa MongoDB ──
+        # ── MongoDB banner header ──
         pdf.set_fill_color(0, 30, 43)        # #001E2B
         pdf.rect(0, 0, 210, 28, "F")
         pdf.set_fill_color(0, 237, 100)      # #00ED64
@@ -255,7 +255,7 @@ def generate_pdf_report(
         pdf.cell(0, 6, _safe(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), ln=True)
         pdf.ln(4)
 
-        # ── Health Score box (se houver) ──
+        # ── Health Score box (if present) ──
         if health_score is not None:
             color = (0, 237, 100) if health_score >= 75 else (250, 204, 21) if health_score >= 50 else (248, 113, 113)
             pdf.set_x(14)
@@ -273,7 +273,7 @@ def generate_pdf_report(
                     pdf.multi_cell(180, 5, f"- {clean}")
                 pdf.ln(2)
 
-        # ── Corpo da análise ──
+        # ── Analysis body ──
         pdf.set_text_color(40, 40, 40)
         pdf.set_font("Helvetica", "", 10)
         for raw_line in analysis_text.split("\n"):
@@ -301,7 +301,7 @@ def generate_pdf_report(
 
 
 def friendly_api_error(err: Exception) -> str:
-    """Converte exceções da API Anthropic em mensagens amigáveis para a demo."""
+    """Converts Anthropic API exceptions into friendly messages for the demo."""
     if isinstance(err, anthropic.AuthenticationError):
         return ("🔑 **API Key da Anthropic inválida ou expirada.** "
                 "Verifique a ANTHROPIC_API_KEY no `.env` do servidor (deve começar com `sk-ant-`).")

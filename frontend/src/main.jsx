@@ -4,7 +4,7 @@ import LeafyGreenProvider from '@leafygreen-ui/leafygreen-provider'
 import App from './App.jsx'
 import './styles.css'
 
-// LeafyGreenProvider com darkMode — visual MongoDB Atlas autêntico
+// LeafyGreenProvider with darkMode — authentic MongoDB Atlas look
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <LeafyGreenProvider darkMode>

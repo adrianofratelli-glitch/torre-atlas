@@ -25,13 +25,13 @@ export default function Profiler({ clusters, config }) {
   const [err, setErr] = useState(null)
   const [sort, setSort] = useState('dur')       // dur | count
   const [filter, setFilter] = useState('all')   // all | read | write | collscan
-  const [open, setOpen] = useState(null)        // índice da linha expandida
+  const [open, setOpen] = useState(null)        // index of the expanded row
 
   const load = async () => {
     setBusy(true); setErr(null); setRows(null); setOpen(null)
     try {
       const data = await getSlow(sel.project_id, sel.cluster_name)
-      // Agrupa por shape (namespace + plano + operação) para contar execuções
+      // Group by shape (namespace + plan + operation) to count executions
       const map = {}
       for (const q of (data.slowQueries || [])) {
         let attr = {}
@@ -95,7 +95,7 @@ export default function Profiler({ clusters, config }) {
             <Kpi label="Pior Latência" value={`${worst.toLocaleString('pt-BR')}ms`} color="#ef4444" />
           </KpiGrid>
 
-          {/* Filtros + ordenação */}
+          {/* Filters + sorting */}
           <div className="row" style={{ marginBottom: 12 }}>
             <span style={{ fontSize: 12, color: '#7fa8bc' }}>Filtrar:</span>
             {['all', 'read', 'write', 'collscan'].map(f => (
