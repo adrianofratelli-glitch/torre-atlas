@@ -7,7 +7,7 @@ The frontend is React with [LeafyGreen](https://www.mongodb.design/), MongoDB's 
 ![React](https://img.shields.io/badge/React-18-blue)
 ![LeafyGreen](https://img.shields.io/badge/LeafyGreen-MongoDB-00ED64)
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688)
-![Claude](https://img.shields.io/badge/Claude-Sonnet_4.6-orange)
+![Claude](https://img.shields.io/badge/Claude-Anthropic-orange)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 > Note: the user interface is in Brazilian Portuguese (pt-BR) by design, since this was built for a Brazilian audience. Source code, comments, and documentation are in English.
