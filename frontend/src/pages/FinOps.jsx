@@ -3,7 +3,7 @@ import { H1, Body } from '@leafygreen-ui/typography'
 import Banner from '@leafygreen-ui/banner'
 import Badge from '@leafygreen-ui/badge'
 import { KpiGrid, Kpi, Section } from '../components.jsx'
-import { getFinops } from '../api.js'
+import { getFinops, getInvoice } from '../api.js'
 
 const fmt = (n) => Math.round(n).toLocaleString('pt-BR')
 const COLOR = { green: '#00ED64', yellow: '#f97316', red: '#ef4444', muted: '#7fa8bc' }
@@ -11,9 +11,13 @@ const VAR = { green: 'green', yellow: 'yellow', red: 'red', muted: 'lightgray' }
 
 export default function FinOps({ clusters }) {
   const [data, setData] = useState(null)
+  const [invoice, setInvoice] = useState(null)   // current pending invoice (real, from the Billing API)
   const [busy, setBusy] = useState(true)
 
-  useEffect(() => { getFinops().then(setData).catch(() => setData({ clusters: [], total_usd: 0, potential_savings_usd: 0 })).finally(() => setBusy(false)) }, [])
+  useEffect(() => {
+    getFinops().then(setData).catch(() => setData({ clusters: [], total_usd: 0, potential_savings_usd: 0 })).finally(() => setBusy(false))
+    getInvoice().then(setInvoice).catch(() => setInvoice(null))
+  }, [])
 
   // Totals come straight from the clusters (instant) — independent of the slow /finops
   const totalBrl = clusters.reduce((s, c) => s + c.cost_brl, 0)
@@ -32,21 +36,23 @@ export default function FinOps({ clusters }) {
     <>
       <div className="page-head"><H1 style={{ color: '#fafafa' }}>FinOps</H1></div>
       <KpiGrid>
-        <Kpi label="Total USD/Mês" value={`$${fmt(totalUsd)}`} />
-        <Kpi label="Total BRL/Mês" value={`R$ ${fmt(totalBrl)}`} color="#00A35C" />
-        <Kpi label="Média/Cluster" value={`R$ ${fmt(avg)}`} color="#06b6d4" />
+        <Kpi label="Fatura Corrente" value={invoice == null ? '—' : `$${fmt(invoice)}`}
+             delta="real · Atlas Billing API" color="#00ED64" />
+        <Kpi label="Total USD/Mês (est.)" value={`$${fmt(totalUsd)}`} delta="tabela us-east-1" />
+        <Kpi label="Total BRL/Mês (est.)" value={`R$ ${fmt(totalBrl)}`} color="#00A35C" />
+        <Kpi label="Média/Cluster (est.)" value={`R$ ${fmt(avg)}`} color="#06b6d4" />
         <Kpi label="Economia Potencial" value={busy ? '…' : `$${fmt(data?.potential_savings_usd || 0)}`}
-             delta={busy ? 'avaliando…' : overprov.length ? `${overprov.length} subutilizado(s)` : 'frota otimizada'}
+             delta={busy ? 'avaliando…' : overprov.length ? `${overprov.length} subutilizado(s) · vs tier abaixo` : 'frota otimizada'}
              color={overprov.length ? '#f97316' : '#00ED64'} />
       </KpiGrid>
 
       {!busy && <Banner variant={verdict.variant} style={{ marginBottom: 18 }}>{verdict.text}</Banner>}
 
-      <Section title="Eficiência por Cluster" sub="custo vs utilização real de CPU" />
-      {busy && <Body style={{ color: '#7fa8bc' }}>Avaliando utilização dos clusters…</Body>}
+      <Section title="Eficiência por Cluster" sub="custo estimado vs CPU média das últimas 24h" />
+      {busy && <Body style={{ color: '#7fa8bc' }}>Avaliando utilização dos clusters (24h)…</Body>}
       {!busy && (
         <table className="mdb">
-          <thead><tr><th>Projeto</th><th>Cluster</th><th>Tier</th><th>CPU</th><th style={{ textAlign: 'right' }}>USD/Mês</th><th>Veredito</th></tr></thead>
+          <thead><tr><th>Projeto</th><th>Cluster</th><th>Tier</th><th>CPU méd. 24h</th><th style={{ textAlign: 'right' }}>USD/Mês (est.)</th><th>Veredito</th></tr></thead>
           <tbody>
             {[...(data?.clusters || [])].sort((a, b) => b.cost_usd - a.cost_usd).map((c, i) => (
               <tr key={i}>

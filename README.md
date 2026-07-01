@@ -33,10 +33,10 @@ Credentials live only in the backend (`.env`); the frontend never sees them. The
 | Overview | Fast static snapshot of the fleet: clusters, status, cost, and alerts. |
 | Clusters | Table of every cluster in the org with tier, region, status, and cost. |
 | Performance Advisor | Suggested indexes, execution via pymongo, Claude analysis, and a PDF report. |
-| Query Profiler | Parsed slow queries (plan, COLLSCAN, documents examined, latency). |
-| Health Score | A 0–100 score combining Performance Advisor, slow queries, status, and version. |
-| Scale | Tier recommendation from real CPU, connection, and IOPS metrics, with a 24h chart. |
-| FinOps | Cost estimate per cluster and per project. |
+| Query Profiler | Parsed slow queries (plan, COLLSCAN, documents examined, latency), with a real `explain('executionStats')`. |
+| Health Score | A 0–100 score combining Performance Advisor, COLLSCAN shapes, status, and version. |
+| Scale | Tier recommendation from 24h CPU (p95/avg), memory, storage, and connections, plus native auto-scaling status. |
+| FinOps | Current invoice (Billing API) plus estimated cost vs 24h utilization per cluster. |
 | Compare | Side-by-side comparison of two clusters. |
 | AI Chat | Claude chat grounded in real cluster context (streaming), with history persisted in Atlas. |
 
@@ -58,7 +58,7 @@ ATLAS_PRIVATE_KEY=...
 ATLAS_ORG_ID=...
 ANTHROPIC_API_KEY=...
 MONGODB_URI=mongodb+srv://...   # optional: index creation and chat history
-CLAUDE_MODEL=claude-sonnet-4-6  # optional: defaults to Sonnet 4.6
+CLAUDE_MODEL=claude-sonnet-5    # optional: defaults to Sonnet 5
 ```
 
 ### 2. Run

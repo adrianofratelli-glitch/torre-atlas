@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { H1, H3, Body } from '@leafygreen-ui/typography'
 import Button from '@leafygreen-ui/button'
 import Banner from '@leafygreen-ui/banner'
+import Badge from '@leafygreen-ui/badge'
 import Card from '@leafygreen-ui/card'
 import { KpiGrid, Kpi, Section, MiniChart, Empty } from '../components.jsx'
 import { getScaling, getSeries, scaleCluster } from '../api.js'
@@ -13,11 +14,12 @@ export default function Scale({ clusters, config }) {
   const [series, setSeries] = useState(null)
   const [newTier, setNewTier] = useState(sel?.tier)
   const [msg, setMsg] = useState(null)
+  const [confirm, setConfirm] = useState(false)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!sel) return
-    setRec(null); setSeries(null); setNewTier(sel.tier); setMsg(null); setLoading(true)
+    setRec(null); setSeries(null); setNewTier(sel.tier); setMsg(null); setConfirm(false); setLoading(true)
     Promise.all([
       getScaling(sel.project_id, sel.cluster_name, sel.tier).then(setRec).catch(() => {}),
       getSeries(sel.project_id, sel.cluster_name).then(setSeries).catch(() => {}),
@@ -42,6 +44,7 @@ export default function Scale({ clusters, config }) {
   const direction = newIdx > curIdx ? '⬆️ Scale UP' : newIdx < curIdx ? '⬇️ Scale DOWN' : ''
 
   const doScale = async () => {
+    setConfirm(false)
     try { const r = await scaleCluster(sel.project_id, sel.cluster_name, newTier); setMsg({ ok: true, t: `Scaling iniciado! Status: ${r.state}. O cluster entrará em UPDATING por alguns minutos.` }) }
     catch (e) { setMsg({ ok: false, t: e?.response?.data?.detail || e.message }) }
   }
@@ -58,16 +61,33 @@ export default function Scale({ clusters, config }) {
         <Kpi label="Cluster" value={sel.cluster_name} color="#06b6d4" />
         <Kpi label="Tier Atual" value={sel.tier} color="#00A35C" />
         <Kpi label="Região" value={sel.region_pretty} color="#7fa8bc" />
-        <Kpi label="Custo Atual/Mês" value={`R$ ${sel.cost_brl.toLocaleString('pt-BR')}`} delta={`≈ USD ${sel.cost_usd.toLocaleString('pt-BR')}`} />
+        <Kpi label="Custo Est./Mês" value={`R$ ${sel.cost_brl.toLocaleString('pt-BR')}`} delta={`≈ USD ${sel.cost_usd.toLocaleString('pt-BR')} · tabela us-east-1`} />
       </KpiGrid>
+
+      {/* Native auto-scaling status — a customer WILL ask "doesn't Atlas do this by itself?" */}
+      <div className="row" style={{ marginBottom: 18, gap: 8, flexWrap: 'wrap' }}>
+        <Badge variant={sel.autoscale_compute ? 'green' : 'lightgray'}>
+          Auto-scaling compute: {sel.autoscale_compute ? `ON · ${sel.autoscale_min}–${sel.autoscale_max}` : 'OFF'}
+        </Badge>
+        <Badge variant={sel.autoscale_disk ? 'green' : 'lightgray'}>
+          Auto-scaling disco: {sel.autoscale_disk ? 'ON' : 'OFF'}
+        </Badge>
+        <span style={{ fontSize: 11, color: '#6b94a8' }}>
+          {sel.autoscale_compute
+            ? 'O Atlas já escala este cluster automaticamente — este painel mostra os mesmos sinais que o auto-scaling avalia.'
+            : 'O Atlas oferece auto-scaling nativo de compute e disco — este painel mostra o que ele avaliaria.'}
+        </span>
+      </div>
 
       {/* ── Key metrics that govern scaling: CPU · Memory · Storage ── */}
       <Section title="Métricas de Scaling" sub="as 3 dimensões que definem o tier" />
       {loading && <Body style={{ color: '#7fa8bc' }}>Analisando métricas do cluster…</Body>}
       {rec?.metrics && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 18 }}>
-          <MetricBar label="CPU" pct={rec.metrics.cpu_pct}
-                     sub={`${rec.metrics.cpu_pct}%`} warn={75} crit={90} />
+          <MetricBar label="CPU" pct={rec.metrics.cpu_p95_24h ?? rec.metrics.cpu_pct}
+                     sub={rec.metrics.cpu_p95_24h != null
+                       ? `p95 24h ${rec.metrics.cpu_p95_24h}% · agora ${rec.metrics.cpu_pct}%`
+                       : `${rec.metrics.cpu_pct}% (agora)`} warn={75} crit={90} />
           <MetricBar label="Memória" pct={rec.metrics.mem_pct}
                      sub={`${rec.metrics.memory_used_gb}/${rec.metrics.mem_total_gb} GB · ${rec.metrics.mem_pct}%`} warn={75} crit={90} />
           <MetricBar label="Storage" pct={rec.metrics.disk_pct}
@@ -102,7 +122,7 @@ export default function Scale({ clusters, config }) {
         <div className="row" style={{ alignItems: 'flex-end', gap: 18 }}>
           <div>
             <div style={{ fontSize: 11, color: '#7fa8bc', marginBottom: 6 }}>Novo tier</div>
-            <select className="mono" value={newTier} onChange={e => setNewTier(e.target.value)}
+            <select className="mono" value={newTier} onChange={e => { setNewTier(e.target.value); setConfirm(false); setMsg(null) }}
               style={{ background: '#00141d', color: '#fafafa', border: '1px solid rgba(0,237,100,0.3)', borderRadius: 6, padding: '9px 14px', fontSize: 15 }}>
               {tiers.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -124,12 +144,27 @@ export default function Scale({ clusters, config }) {
                 </div>
               </div>
               <div className="spacer" />
-              <Button variant="primary" onClick={doScale}>🚀 Executar Scaling</Button>
+              {!confirm
+                ? <Button variant="primary" onClick={() => setConfirm(true)}>🚀 Executar Scaling</Button>
+                : <div className="row" style={{ gap: 8 }}>
+                    <Button variant="danger" onClick={doScale}>Confirmar {sel.tier} → {newTier}</Button>
+                    <Button variant="default" onClick={() => setConfirm(false)}>Cancelar</Button>
+                  </div>}
             </>
           )}
         </div>
+        {confirm && (
+          <Banner variant="warning" style={{ marginTop: 12 }}>
+            ⚠️ Isso executa um <b>PATCH real</b> no cluster <b>{sel.cluster_name}</b> ({sel.tier} → {newTier}) via Admin API. Confirme para prosseguir.
+          </Banner>
+        )}
+        {newIdx < curIdx && newIdx >= 0 && (
+          <div style={{ fontSize: 11, color: '#f97316', marginTop: 10 }}>
+            ⚠️ Scale down exige que dados e oplog caibam no storage do tier menor — o Atlas bloqueia a operação se não couberem.
+          </div>
+        )}
         <Banner variant="info" style={{ marginTop: 16 }}>
-          O scaling faz um <b>rolling restart sem downtime</b> — o Atlas atualiza os nós um a um.
+          O scaling é um <b>rolling restart nó a nó</b> — sem downtime perceptível para aplicações com <b>retryable writes</b>; há um failover de primário de alguns segundos ao final.
         </Banner>
       </Card>
       {msg && <Banner variant={msg.ok ? 'success' : 'danger'} style={{ marginTop: 14 }}>{msg.t}</Banner>}

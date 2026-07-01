@@ -286,8 +286,11 @@ class AtlasClient:
         Fetch a time series of metrics for charts (default: last 24h, 1 point/h).
         Returns a plot-ready structure: timestamps + aligned series.
         """
+        # Normalized CPU (0–100% regardless of core count) — must match the
+        # snapshot in get_measurements, otherwise chart and gauge contradict
+        # each other on multi-core tiers.
         METRICS = [
-            "SYSTEM_CPU_USER", "SYSTEM_CPU_KERNEL",
+            "SYSTEM_NORMALIZED_CPU_USER", "SYSTEM_NORMALIZED_CPU_KERNEL",
             "OPCOUNTER_QUERY", "OPCOUNTER_INSERT", "OPCOUNTER_UPDATE",
             "CONNECTIONS",
         ]
@@ -323,7 +326,7 @@ class AtlasClient:
 
         return {
             "timestamps":  timestamps,
-            "cpu":         _combine("SYSTEM_CPU_USER", "SYSTEM_CPU_KERNEL"),
+            "cpu":         _combine("SYSTEM_NORMALIZED_CPU_USER", "SYSTEM_NORMALIZED_CPU_KERNEL"),
             "ops_query":   _clean("OPCOUNTER_QUERY"),
             "ops_insert":  _clean("OPCOUNTER_INSERT"),
             "ops_update":  _clean("OPCOUNTER_UPDATE"),
@@ -334,16 +337,19 @@ class AtlasClient:
     # Approximate connection limit per tier (Atlas docs)
     TIER_CONN_LIMIT = {
         "M10": 1500, "M20": 3000, "M30": 3000, "M40": 6000, "M50": 16000,
-        "M60": 32000, "M80": 64000, "M140": 96000, "M200": 128000,
+        "M60": 32000, "M80": 96000, "M140": 96000, "M200": 128000,
         "M300": 128000, "M400": 128000, "M700": 128000,
         "M40_NVME": 6000, "M50_NVME": 16000, "M60_NVME": 32000,
-        "M80_NVME": 64000, "M200_NVME": 128000, "M400_NVME": 128000,
+        "M80_NVME": 96000, "M200_NVME": 128000, "M400_NVME": 128000,
     }
 
     @staticmethod
-    def recommend_scaling(measurements: dict, tier: str) -> dict:
+    def recommend_scaling(measurements: dict, tier: str, cpu24: dict = None) -> dict:
         """
         Recommend scaling based on real hardware metrics.
+        cpu24 = {"avg": x, "p95": y} over the last 24h, when available — scaling
+        decisions must not rely on a 5-min snapshot (a 9am demo would recommend
+        downsizing a cluster that peaks at 3am).
         Returns {"action": "up"|"down"|"ok", "severity": "high"|"med"|"low",
                  "reasons": [str], "headline": str}.
         """
@@ -351,6 +357,9 @@ class AtlasClient:
             return {"action": "ok", "severity": "low", "reasons": [], "headline": ""}
 
         cpu      = measurements.get("cpu_pct", 0)
+        cpu_up   = cpu24["p95"] if cpu24 else cpu
+        cpu_down = cpu24["avg"] if cpu24 else cpu
+        cpu_lbl  = "CPU (p95 24h)" if cpu24 else "CPU"
         conns    = measurements.get("connections", 0)
         iops     = measurements.get("disk_iops_read", 0) + measurements.get("disk_iops_write", 0)
         mem_pct  = measurements.get("mem_pct", 0)
@@ -361,12 +370,12 @@ class AtlasClient:
         reasons, action, severity = [], "ok", "low"
 
         # ── CPU ──
-        if cpu >= 80:
+        if cpu_up >= 80:
             action, severity = "up", "high"
-            reasons.append(f"CPU em **{cpu}%** — acima de 80%, gargalo de processamento")
-        elif cpu >= 65:
+            reasons.append(f"{cpu_lbl} em **{cpu_up}%** — acima de 80%, gargalo de processamento")
+        elif cpu_up >= 65:
             action, severity = "up", "med"
-            reasons.append(f"CPU em **{cpu}%** — aproximando do limite (65%+)")
+            reasons.append(f"{cpu_lbl} em **{cpu_up}%** — aproximando do limite (65%+)")
 
         # ── Memory (WiredTiger cache pressure) ──
         if mem_pct >= 90:
@@ -401,12 +410,13 @@ class AtlasClient:
                 action, severity = "up", "med"
             reasons.append(f"Disco em **{iops:.0f} IOPS** — avalie tier NVMe para I/O intensivo")
 
-        # ── Scale DOWN: clear underutilization across the 3 key metrics ──
-        if (action == "ok" and cpu < 15 and conn_pct < 20
+        # ── Scale DOWN: clear underutilization — judged on the 24h AVERAGE, not
+        # the current snapshot, so an off-peak demo doesn't suggest downsizing ──
+        if (action == "ok" and cpu_down < 15 and conn_pct < 20
                 and mem_pct < 50 and disk_pct < 50 and tier != "M10"):
             action, severity = "down", "low"
-            reasons.append(f"CPU **{cpu}%**, memória **{mem_pct}%**, disco **{disk_pct}%** — "
-                           "tudo baixo, possível economia de custo")
+            reasons.append(f"CPU {'média 24h ' if cpu24 else ''}**{cpu_down}%**, memória **{mem_pct}%**, "
+                           f"disco **{disk_pct}%** — tudo baixo, possível economia de custo")
 
         headlines = {
             "up":   "⬆️ Recomendação: Scale UP",
@@ -414,7 +424,7 @@ class AtlasClient:
             "ok":   "✅ Tier adequado para a carga atual",
         }
         if action == "ok" and not reasons:
-            reasons.append(f"CPU **{cpu}%**, memória **{mem_pct}%**, storage **{disk_pct}%** — "
+            reasons.append(f"{cpu_lbl} **{cpu_up}%**, memória **{mem_pct}%**, storage **{disk_pct}%** — "
                            "tudo saudável, nenhuma ação necessária")
 
         return {"action": action, "severity": severity,
@@ -422,6 +432,8 @@ class AtlasClient:
                 # key metrics for the UI to display (CPU · Memory · Storage · Connections)
                 "metrics": {
                     "cpu_pct": cpu, "mem_pct": mem_pct, "disk_pct": disk_pct,
+                    "cpu_p95_24h": cpu24["p95"] if cpu24 else None,
+                    "cpu_avg_24h": cpu24["avg"] if cpu24 else None,
                     "connections": conns, "conn_pct": round(conn_pct, 1),
                     "memory_used_gb": measurements.get("memory_used_gb", 0),
                     "mem_total_gb": measurements.get("mem_total_gb", 0),
@@ -475,7 +487,15 @@ def create_index_direct(mongo_uri: str, namespace: str, index_keys: list) -> str
         parts     = namespace.split(".", 1)
         db_name   = parts[0]
         coll_name = parts[1] if len(parts) > 1 else parts[0]
-        keys      = [(list(k.keys())[0], int(list(k.values())[0])) for k in index_keys]
+
+        # Direction can be 1/-1 but also "hashed", "2dsphere", "text" — keep
+        # non-numeric values as strings instead of crashing on int()
+        def _direction(v):
+            try:
+                return int(v)
+            except (TypeError, ValueError):
+                return str(v)
+        keys = [(list(k.keys())[0], _direction(list(k.values())[0])) for k in index_keys]
         mc        = MongoClient(mongo_uri, serverSelectionTimeoutMS=6000)
 
         for attempt in range(2):

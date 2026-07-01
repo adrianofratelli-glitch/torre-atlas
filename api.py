@@ -7,7 +7,10 @@ Credentials ALWAYS come from the environment (.env) — never from the frontend.
 Run with:  uvicorn api:app --reload --port 8000
 """
 
+import json
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
 from dotenv import load_dotenv
@@ -46,29 +49,30 @@ def pretty_region(code: str) -> str:
     return REGION_NAMES.get(code, code.replace("_", " ").title())
 
 
-def calculate_health_score(status: str, n_pa: int, n_sq: int, mongo_version: str) -> dict:
-    score, issues = 100, []
-    if status == "IDLE":
-        pass
-    elif status == "PAUSED":
-        score -= 10; issues.append("Cluster PAUSADO (-10 pts)")
-    else:
-        score -= 20; issues.append(f"Status {status} não-IDLE (-20 pts)")
-    pen = min(n_pa * 5, 30)
-    if pen:
-        score -= pen; issues.append(f"{n_pa} índice(s) sugerido(s) pelo PA (-{pen} pts)")
-    pen = min(n_sq * 2, 30)
-    if pen:
-        score -= pen; issues.append(f"{n_sq} slow quer{'y' if n_sq == 1 else 'ies'} (-{pen} pts)")
-    try:
-        if int(mongo_version.split(".")[0]) < 7:
-            score -= 10; issues.append(f"MongoDB {mongo_version} desatualizado (-10 pts)")
-    except Exception:
-        pass
-    score = max(0, score)
-    grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60 else "D" if score >= 40 else "F"
-    color = "#00ED64" if score >= 75 else "#FFA500" if score >= 50 else "#FF4444"
-    return {"score": score, "grade": grade, "color": color, "issues": issues}
+def _uri_cluster_hash() -> str:
+    """Unique hash of the cluster MONGODB_URI points to ('' if unset/unparseable)."""
+    m = re.search(r'\.([a-z0-9]+)\.mongodb\.net', os.getenv("MONGODB_URI", "").lower())
+    return m.group(1) if m else ""
+
+
+def _cluster_srv_hash(cluster: dict) -> str:
+    srv = (cluster.get("connectionStrings") or {}).get("standardSrv", "") or cluster.get("srvAddress", "")
+    m = re.search(r'\.([a-z0-9]+)\.mongodb\.net', str(srv).lower())
+    return m.group(1) if m else ""
+
+
+def _cpu_24h_stats(client: AtlasClient, project_id: str, process_id: str) -> Optional[dict]:
+    """avg/p95 of normalized CPU over the last 24h — scaling and efficiency
+    verdicts must not rely on a 5-min snapshot."""
+    series = client.get_measurements_series(project_id, process_id)
+    if "error" in series:
+        return None
+    vals = [v for v in series.get("cpu", []) if v is not None]
+    if not vals:
+        return None
+    ordered = sorted(vals)
+    return {"avg": round(sum(vals) / len(vals), 1),
+            "p95": round(ordered[int(0.95 * (len(ordered) - 1))], 1)}
 
 
 # ── Atlas client (singleton built from the environment) ───────────────────────
@@ -124,6 +128,7 @@ def config():
 def list_clusters():
     client = get_client()
     rows = []
+    uri_hash = _uri_cluster_hash()
     try:
         projects = client.get_projects()
     except Exception as e:
@@ -135,14 +140,17 @@ def list_clusters():
             continue
         for c in clusters:
             tier = region = "—"
+            autoscale = {}
             try:
                 rc = c["replicationSpecs"][0]["regionConfigs"][0]
                 tier = rc["electableSpecs"]["instanceSize"]
                 region = rc["regionName"]
+                autoscale = rc.get("autoScaling") or {}
             except (KeyError, IndexError, TypeError):
                 tier = "Free/Shared"
             status = "PAUSED" if c.get("paused") else c.get("stateName", "—")
             cost = AtlasClient.estimate_cost(tier, USD_BRL)
+            compute = autoscale.get("compute") or {}
             rows.append({
                 "project_id": proj["id"], "project_name": proj["name"],
                 "cluster_name": c["name"], "tier": tier,
@@ -150,6 +158,12 @@ def list_clusters():
                 "status": status, "mongo_version": c.get("mongoDBVersion", "—"),
                 "cluster_type": c.get("clusterType", "—"),
                 "cost_usd": cost["usd"], "cost_brl": cost["brl"],
+                # whether MONGODB_URI points to THIS cluster (gates index/explain actions)
+                "is_uri_target": bool(uri_hash) and _cluster_srv_hash(c) == uri_hash,
+                "autoscale_compute": bool(compute.get("enabled")),
+                "autoscale_min": compute.get("minInstanceSize", ""),
+                "autoscale_max": compute.get("maxInstanceSize", ""),
+                "autoscale_disk": bool((autoscale.get("diskGB") or {}).get("enabled")),
             })
     return {"clusters": rows}
 
@@ -212,98 +226,142 @@ def series(project_id: str, cluster_name: str):
 @app.get("/api/cluster/{project_id}/{cluster_name}/health")
 def health(project_id: str, cluster_name: str, status: str = "", mongo_version: str = "0"):
     client = get_client()
-    n_pa = n_sq = 0
     pid = client.get_primary(project_id, cluster_name)
-    if pid:
-        try:
-            n_pa = len(client.get_suggested_indexes(project_id, pid).get("suggestedIndexes", []))
-            n_sq = len(client.get_slow_queries(project_id, pid).get("slowQueries", []))
-        except Exception:
-            pass
-    hs = calculate_health_score(status, n_pa, n_sq, mongo_version)
+    if not pid:
+        # Paused/transitioning cluster: PA and profiler have no process to report
+        # on — an honest "no grade" beats scoring 90 on absent data.
+        return {"score": None, "grade": "—", "color": "#7fa8bc", "n_pa": 0, "n_sq": 0,
+                "components": [],
+                "issues": ["Cluster pausado ou em transição — sem dados de PA/profiler."],
+                "tips": [{"gain": 0, "text": "Retome o cluster para calcular o Health Score — "
+                          "pausado, não há processo primário para o Performance Advisor e o profiler avaliarem."}]}
 
-    # Per-component breakdown (how much each one adds / deducts)
+    n_pa = n_sq = 0
+    collscan_shapes = set()
+    try:
+        n_pa = len(client.get_suggested_indexes(project_id, pid).get("suggestedIndexes", []))
+        slow = client.get_slow_queries(project_id, pid).get("slowQueries", [])
+        n_sq = len(slow)
+        for q in slow:
+            try:
+                attr = json.loads(q.get("line") or "{}").get("attr", {})
+            except Exception:
+                attr = {}
+            if "COLLSCAN" in str(attr.get("planSummary", "")):
+                collscan_shapes.add((q.get("namespace", ""), str(attr.get("type", ""))))
+    except Exception:
+        pass
+
     try:
         major = int(str(mongo_version).split(".")[0])
     except Exception:
         major = 0
-    status_pts = 20 if status == "IDLE" else (10 if status == "PAUSED" else 0)
+
+    idx_pen = min(n_pa * 5, 30)
+    # Penalize by COLLSCAN shape, not raw log volume — a busy, healthy cluster
+    # always has slow-log entries; what hurts is repeated unindexed shapes.
+    q_pen = min(len(collscan_shapes) * 10, 30)
+    if q_pen == 0 and n_sq > 50:
+        q_pen = 5
+    ver_pts = 10 if major >= 8 else 5 if major == 7 else 0
+
     components = [
-        {"label": "Status do Cluster", "earned": status_pts, "max": 20,
-         "detail": "IDLE = saudável" if status == "IDLE" else f"Status {status}",
+        {"label": "Status do Cluster", "earned": 20 if status == "IDLE" else 10, "max": 20,
+         "detail": "IDLE = estável" if status == "IDLE" else f"Status {status} (em transição)",
          "ok": status == "IDLE"},
-        {"label": "Saúde de Índices", "earned": max(0, 30 - min(n_pa * 5, 30)), "max": 30,
-         "detail": "Nenhum índice sugerido pelo PA" if n_pa == 0 else f"{n_pa} índice(s) sugerido(s) — faltam índices",
+        {"label": "Saúde de Índices", "earned": 30 - idx_pen, "max": 30,
+         "detail": "Nenhum índice sugerido pelo PA" if n_pa == 0 else f"{n_pa} índice(s) sugerido(s) pelo PA",
          "ok": n_pa == 0},
-        {"label": "Saúde de Queries", "earned": max(0, 30 - min(n_sq * 2, 30)), "max": 30,
-         "detail": "Sem slow queries" if n_sq == 0 else f"{n_sq} slow quer{'y' if n_sq == 1 else 'ies'} registradas",
-         "ok": n_sq == 0},
-        {"label": "Versão do MongoDB", "earned": 10 if major >= 7 else 0, "max": 10,
-         "detail": f"MongoDB {mongo_version}" + ("" if major >= 7 else " — desatualizada (<7)"),
-         "ok": major >= 7},
+        {"label": "Saúde de Queries", "earned": 30 - q_pen, "max": 30,
+         "detail": (f"{len(collscan_shapes)} shape(s) COLLSCAN em {n_sq} slow queries" if collscan_shapes
+                    else f"Volume alto de slow queries ({n_sq}), sem COLLSCAN" if q_pen
+                    else f"Sem COLLSCANs ({n_sq} slow queries no log)"),
+         "ok": q_pen == 0},
+        {"label": "Versão do MongoDB", "earned": ver_pts, "max": 10,
+         "detail": f"MongoDB {mongo_version}" + ("" if major >= 8 else
+                    " — 8.0 é a versão atual" if major == 7 else " — desatualizada (<7)"),
+         "ok": major >= 8},
         {"label": "Base", "earned": 10, "max": 10, "detail": "pontuação base", "ok": True},
     ]
-    # Actionable recommendations to improve the score
+    score = sum(c["earned"] for c in components)
+    grade = "A" if score >= 90 else "B" if score >= 75 else "C" if score >= 60 else "D" if score >= 40 else "F"
+    color = "#00ED64" if score >= 75 else "#FFA500" if score >= 50 else "#FF4444"
+    issues = [f"{c['label']}: {c['detail']} (-{c['max'] - c['earned']} pts)"
+              for c in components if not c["ok"]]
+
     tips = []
-    if n_pa > 0:
-        tips.append({"gain": min(n_pa * 5, 30), "text": f"Crie os {n_pa} índice(s) sugeridos no **Performance Advisor** — recupera até +{min(n_pa*5,30)} pts."})
-    if n_sq > 0:
-        tips.append({"gain": min(n_sq * 2, 30), "text": f"Otimize as {n_sq} slow queries (veja o **Query Profiler**) — elimine COLLSCANs para recuperar até +{min(n_sq*2,30)} pts."})
-    if major and major < 7:
-        tips.append({"gain": 10, "text": f"Atualize o MongoDB {mongo_version} → 7.0+ — recupera +10 pts e melhora performance."})
-    if status == "PAUSED":
-        tips.append({"gain": 10, "text": "Retome (resume) o cluster pausado — recupera +10 pts."})
+    if n_pa:
+        tips.append({"gain": idx_pen, "text": f"Crie os {n_pa} índice(s) sugeridos no **Performance Advisor** — recupera até +{idx_pen} pts."})
+    if collscan_shapes:
+        tips.append({"gain": q_pen, "text": f"Elimine os {len(collscan_shapes)} shape(s) COLLSCAN (veja o **Query Profiler**) — recupera até +{q_pen} pts."})
+    elif q_pen:
+        tips.append({"gain": q_pen, "text": f"Volume alto de slow queries ({n_sq}) — revise no **Query Profiler** para recuperar +{q_pen} pts."})
+    if major < 8:
+        tips.append({"gain": 10 - ver_pts, "text": f"Atualize o MongoDB {mongo_version} → 8.0 — recupera +{10 - ver_pts} pts e melhora performance."})
+    if status != "IDLE":
+        tips.append({"gain": 10, "text": f"Cluster em {status} — a nota volta a +10 pts quando estabilizar em IDLE."})
     if not tips:
         tips.append({"gain": 0, "text": "Cluster já está no topo — nenhuma ação necessária. 🎉"})
 
-    return {**hs, "n_pa": n_pa, "n_sq": n_sq, "components": components, "tips": tips}
+    return {"score": score, "grade": grade, "color": color, "n_pa": n_pa, "n_sq": n_sq,
+            "components": components, "issues": issues, "tips": tips}
 
 
 @app.get("/api/finops")
 def finops():
-    """Evaluates cost efficiency (cost vs. actual CPU utilization) per cluster."""
+    """Evaluates cost efficiency (estimated cost vs. 24h average CPU) per cluster."""
     client = get_client()
-    out = []
     try:
         projects = client.get_projects()
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+    work = []
     for proj in projects:
         try:
-            clusters = client.get_clusters(proj["id"])
+            work += [(proj, c) for c in client.get_clusters(proj["id"])]
         except Exception:
             continue
-        for c in clusters:
-            try:
-                rc = c["replicationSpecs"][0]["regionConfigs"][0]
-                tier = rc["electableSpecs"]["instanceSize"]
-            except (KeyError, IndexError, TypeError):
-                tier = "Free/Shared"
-            if c.get("paused") or tier == "Free/Shared":
-                cpu = None
+
+    def _tier_down(tier: str) -> Optional[str]:
+        tiers = NVME_TIERS if tier.endswith("_NVME") else DEDICATED_TIERS
+        i = tiers.index(tier) if tier in tiers else -1
+        return tiers[i - 1] if i > 0 else None
+
+    def evaluate(item):
+        proj, c = item
+        try:
+            rc = c["replicationSpecs"][0]["regionConfigs"][0]
+            tier = rc["electableSpecs"]["instanceSize"]
+        except (KeyError, IndexError, TypeError):
+            tier = "Free/Shared"
+        cpu = None
+        if not c.get("paused") and tier != "Free/Shared":
+            pid = client.get_primary(proj["id"], c["name"])
+            stats = _cpu_24h_stats(client, proj["id"], pid) if pid else None
+            cpu = stats["avg"] if stats else None
+        cost = AtlasClient.estimate_cost(tier, USD_BRL)
+        verdict, color, savings = "sem dados", "muted", 0
+        if cpu is not None:
+            down = _tier_down(tier)
+            if cpu < 15 and down:
+                # Real saving is the delta to the next tier down — not the whole bill
+                savings = cost["usd"] - AtlasClient.estimate_cost(down, USD_BRL)["usd"]
+                verdict, color = f"subutilizado — avaliar {down}", "yellow"
+            elif cpu > 75:
+                verdict, color = "saturado — avaliar scale up", "red"
             else:
-                pid = client.get_primary(proj["id"], c["name"])
-                m = client.get_measurements(proj["id"], pid) if pid else {}
-                cpu = m.get("cpu_pct") if m and "error" not in m else None
-            cost = AtlasClient.estimate_cost(tier, USD_BRL)
-            # Efficiency verdict: high cost + low CPU = waste
-            verdict, color = "sem dados", "muted"
-            if cpu is not None:
-                if cpu < 15 and cost["usd"] >= 389:      # M30+
-                    verdict, color = "subutilizado — possível economia", "yellow"
-                elif cpu > 75:
-                    verdict, color = "saturado — avaliar scale up", "red"
-                else:
-                    verdict, color = "saudável — bom uso do tier", "green"
-            out.append({
-                "project": proj["name"], "cluster": c["name"], "tier": tier,
+                verdict, color = "saudável — bom uso do tier", "green"
+        return {"project": proj["name"], "cluster": c["name"], "tier": tier,
                 "cpu": cpu, "cost_usd": cost["usd"], "cost_brl": cost["brl"],
-                "verdict": verdict, "color": color,
-            })
-    total_usd = sum(c["cost_usd"] for c in out)
-    waste = [c for c in out if c["color"] == "yellow"]
-    return {"clusters": out, "total_usd": total_usd,
-            "potential_savings_usd": sum(c["cost_usd"] for c in waste)}
+                "verdict": verdict, "color": color, "savings_usd": savings}
+
+    # Each cluster needs 3-4 Atlas API calls — sequential would take minutes on a real org
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        out = list(ex.map(evaluate, work))
+
+    return {"clusters": out, "total_usd": sum(c["cost_usd"] for c in out),
+            "potential_savings_usd": sum(c["savings_usd"] for c in out)}
 
 
 @app.get("/api/cluster/{project_id}/{cluster_name}/scaling")
@@ -311,7 +369,8 @@ def scaling(project_id: str, cluster_name: str, tier: str):
     client = get_client()
     pid = client.get_primary(project_id, cluster_name)
     meas = client.get_measurements(project_id, pid) if pid else {}
-    return AtlasClient.recommend_scaling(meas, tier)
+    cpu24 = _cpu_24h_stats(client, project_id, pid) if pid else None
+    return AtlasClient.recommend_scaling(meas, tier, cpu24)
 
 
 # ── Scale / Index (actions) ───────────────────────────────────────────────────
@@ -331,10 +390,32 @@ def scale(project_id: str, cluster_name: str, body: ScaleBody):
 class IndexBody(BaseModel):
     namespace: str
     index_keys: list
+    project_id: Optional[str] = None
+    cluster_name: Optional[str] = None
 
 class ExplainBody(BaseModel):
     namespace: str
     filter: dict = {}
+    project_id: Optional[str] = None
+    cluster_name: Optional[str] = None
+
+
+def _assert_uri_targets(project_id: Optional[str], cluster_name: Optional[str]):
+    """409 if MONGODB_URI points to a different cluster than the one selected in
+    the UI — otherwise the index/explain would silently run on the wrong cluster."""
+    uri_hash = _uri_cluster_hash()
+    if not (uri_hash and project_id and cluster_name):
+        return
+    try:
+        cluster = get_client().get_cluster(project_id, cluster_name)
+    except Exception:
+        return
+    srv_hash = _cluster_srv_hash(cluster)
+    if srv_hash and srv_hash != uri_hash:
+        raise HTTPException(status_code=409, detail=(
+            f"MONGODB_URI aponta para outro cluster — a ação seria executada fora de "
+            f"'{cluster_name}'. Ajuste o MONGODB_URI no .env do servidor."))
+
 
 @app.post("/api/explain")
 def explain_query(body: ExplainBody):
@@ -342,6 +423,7 @@ def explain_query(body: ExplainBody):
     uri = os.getenv("MONGODB_URI", "")
     if not uri:
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
+    _assert_uri_targets(body.project_id, body.cluster_name)
     try:
         parts = body.namespace.split(".", 1)
         db_name, coll = parts[0], (parts[1] if len(parts) > 1 else parts[0])
@@ -367,6 +449,7 @@ def create_index(body: IndexBody):
     uri = os.getenv("MONGODB_URI", "")
     if not uri:
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
+    _assert_uri_targets(body.project_id, body.cluster_name)
     return {"result": create_index_direct(uri, body.namespace, body.index_keys)}
 
 

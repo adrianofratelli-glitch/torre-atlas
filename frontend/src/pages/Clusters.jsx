@@ -9,11 +9,11 @@ export default function Clusters({ clusters }) {
       <Section title="Frota" badge={`${clusters.length} cluster(s)`} />
       <table className="mdb">
         <thead>
-          <tr><th>Projeto</th><th>Cluster</th><th>Tier</th><th>Região</th><th>Status</th><th>MongoDB</th><th>Tipo</th><th style={{ textAlign: 'right' }}>Custo/Mês</th></tr>
+          <tr><th>Projeto</th><th>Cluster</th><th>Tier</th><th>Região</th><th>Status</th><th>MongoDB</th><th>Tipo</th><th style={{ textAlign: 'right' }}>Custo/Mês (est.)</th></tr>
         </thead>
         <tbody>
           {clusters.map(c => (
-            <tr key={c.cluster_name}>
+            <tr key={`${c.project_id}:${c.cluster_name}`}>
               <td>{c.project_name}</td>
               <td className="mono" style={{ color: '#00ED64' }}>{c.cluster_name}</td>
               <td><Badge variant="blue">{c.tier}</Badge></td>
@@ -26,6 +26,9 @@ export default function Clusters({ clusters }) {
           ))}
         </tbody>
       </table>
+      <div style={{ fontSize: 11, color: '#6b94a8', marginTop: 10 }}>
+        Custos estimados pela tabela pública (AWS us-east-1, replica set 3 nós) — variam por provedor e região.
+      </div>
     </>
   )
 }

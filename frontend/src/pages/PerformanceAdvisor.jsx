@@ -34,7 +34,7 @@ export default function PerformanceAdvisor({ clusters, config }) {
   const runIndex = async (i, ns, indexKeys) => {
     setIdxMsg({ i, ok: true, text: '⏳ Criando índice…' })
     try {
-      const r = await createIndex(ns, indexKeys)
+      const r = await createIndex(ns, indexKeys, sel.project_id, sel.cluster_name)
       setIdxMsg({ i, ok: !String(r.result).startsWith('❌'), text: r.result })
     } catch (e) {
       setIdxMsg({ i, ok: false, text: e?.response?.data?.detail || e.message })
@@ -64,10 +64,20 @@ export default function PerformanceAdvisor({ clusters, config }) {
             const cmd = `db.${ns.split('.').pop()}.createIndex({ ${fields} })`
             return (
               <Card className="panel" key={i} darkMode style={{ marginBottom: 12 }}>
-                <Body weight="medium">#{i + 1} · {ns} · peso {Math.round((idx.weight || 0) * 100) / 100}</Body>
+                <Body weight="medium">
+                  #{i + 1} · {ns} ·{' '}
+                  <span title="Score interno do Performance Advisor — quanto maior, maior o ganho esperado ao criar o índice">
+                    impacto estimado {Math.round((idx.weight || 0) * 100) / 100}
+                  </span>
+                </Body>
                 <pre>{cmd}</pre>
-                {config.mongodb && (
+                {config.mongodb && sel.is_uri_target && (
                   <Button size="small" onClick={() => runIndex(i, ns, idx.index)}>▶ Executar Índice</Button>
+                )}
+                {config.mongodb && !sel.is_uri_target && (
+                  <div style={{ fontSize: 11, color: '#f97316' }}>
+                    ⚠️ Execução desabilitada — o MONGODB_URI do servidor aponta para outro cluster.
+                  </div>
                 )}
                 {idxMsg?.i === i && (
                   <Banner variant={idxMsg.ok ? 'success' : 'danger'} style={{ marginTop: 10 }}>{idxMsg.text}</Banner>

@@ -41,11 +41,11 @@ export default function Overview({ clusters }) {
       <KpiGrid>
         <Kpi label="Total Clusters" value={clusters.length} delta={`${dedic.length} dedicados`} />
         <Kpi label="Projetos" value={projects.length} color="#06b6d4" />
-        <Kpi label="Ativos (IDLE)" value={`${idle}/${clusters.length}`}
-             delta={idle === clusters.length ? 'todos online' : `${clusters.length - idle} offline`}
+        <Kpi label="Estáveis (IDLE)" value={`${idle}/${clusters.length}`}
+             delta={idle === clusters.length ? 'todos estáveis' : `${clusters.length - idle} pausado(s)/em transição`}
              color={idle === clusters.length ? '#00ED64' : '#f97316'} />
         <Kpi label="Tier + comum" value={topTier} color="#00A35C" />
-        <Kpi label="Custo / Mês" value={`R$ ${fmt(costBrl)}`} delta={`≈ USD ${fmt(costUsd)}`} />
+        <Kpi label="Custo Est./Mês" value={`R$ ${fmt(costBrl)}`} delta={`≈ USD ${fmt(costUsd)} · tabela us-east-1`} />
         <Kpi label="Alertas" value={alerts} delta={alerts === 0 ? '✓ nenhum' : `↑ ${alerts} abertos`}
              color={alerts === 0 ? '#00ED64' : '#f97316'} />
       </KpiGrid>
@@ -62,7 +62,7 @@ export default function Overview({ clusters }) {
         <div>
           <Section title="Frota de Clusters" badge={String(clusters.length)} />
           {clusters.map(c => (
-            <div key={c.cluster_name} className="fleet-card" style={{ borderLeft: `3px solid ${dotColor(c.status)}` }}>
+            <div key={`${c.project_id}:${c.cluster_name}`} className="fleet-card" style={{ borderLeft: `3px solid ${dotColor(c.status)}` }}>
               <StatusDot status={c.status} />
               <div style={{ flex: 1 }}>
                 <div className="mono" style={{ fontWeight: 700, color: '#fafafa' }}>{c.cluster_name}</div>
@@ -97,6 +97,7 @@ export default function Overview({ clusters }) {
 
       <div style={{ fontSize: 12, color: '#6b94a8', marginTop: 20 }}>
         💡 Métricas vivas (CPU, conexões, IOPS) ficam sob demanda nas abas <b>Scale</b>, <b>Health Score</b> e <b>FinOps</b> — para manter a Visão Geral rápida.
+        Custos são <b>estimativas de tabela</b> (AWS us-east-1) — a fatura real está na aba <b>FinOps</b>.
       </div>
     </>
   )

@@ -16,9 +16,9 @@ export const getSeries      = (pid, name) => http.get(`${c(pid, name)}/series`).
 export const getHealth      = (pid, name, status, mv) => http.get(`${c(pid, name)}/health`, { params: { status, mongo_version: mv } }).then(r => r.data)
 export const getScaling     = (pid, name, tier) => http.get(`${c(pid, name)}/scaling`, { params: { tier } }).then(r => r.data)
 export const scaleCluster   = (pid, name, newTier) => http.post(`${c(pid, name)}/scale`, { new_tier: newTier }).then(r => r.data)
-export const createIndex    = (namespace, indexKeys) => http.post('/index', { namespace, index_keys: indexKeys }).then(r => r.data)
+export const createIndex    = (namespace, indexKeys, project_id, cluster_name) => http.post('/index', { namespace, index_keys: indexKeys, project_id, cluster_name }).then(r => r.data)
 export const getFinops      = () => http.get('/finops').then(r => r.data)
-export const explainQuery   = (namespace, filter) => http.post('/explain', { namespace, filter }).then(r => r.data)
+export const explainQuery   = (namespace, filter, project_id, cluster_name) => http.post('/explain', { namespace, filter, project_id, cluster_name }).then(r => r.data)
 
 // Conversation history (persisted in Atlas — requires MONGODB_URI on the backend)
 export const listConversations  = (q = '') => http.get('/chat/conversations', { params: { q } }).then(r => r.data.conversations)

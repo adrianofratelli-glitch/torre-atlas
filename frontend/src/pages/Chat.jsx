@@ -8,6 +8,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Leaf } from '../components.jsx'
 import { streamChat, listConversations, getConversation, deleteConversation } from '../api.js'
+import { clusterKey } from './_picker.jsx'
 
 const SUGGESTIONS = [
   'Quais indicadores mostram que meu cluster precisa de scale up?',
@@ -88,10 +89,10 @@ export default function Chat({ clusters, config }) {
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <div className="page-head" style={{ justifyContent: 'space-between' }}>
         <div className="row"><Leaf size={24} /><H1 style={{ color: '#fafafa' }}>MongoDB Expert</H1></div>
-        <select className="mono" value={ctx?.cluster_name || ''} onChange={e => setCtx(clusters.find(c => c.cluster_name === e.target.value) || null)}
+        <select className="mono" value={ctx ? clusterKey(ctx) : ''} onChange={e => setCtx(clusters.find(c => clusterKey(c) === e.target.value) || null)}
           style={{ background: '#003345', color: '#fafafa', border: '1px solid rgba(0,237,100,0.25)', borderRadius: 20, padding: '6px 14px', fontSize: 12 }}>
           <option value="">🌐 MongoDB geral</option>
-          {clusters.map(c => <option key={c.cluster_name} value={c.cluster_name}>📎 {c.cluster_name}</option>)}
+          {clusters.map(c => <option key={clusterKey(c)} value={clusterKey(c)}>📎 {c.project_name} / {c.cluster_name}</option>)}
         </select>
       </div>
 

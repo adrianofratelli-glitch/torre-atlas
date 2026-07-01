@@ -4,6 +4,7 @@ import Button from '@leafygreen-ui/button'
 import Banner from '@leafygreen-ui/banner'
 import { Section, Empty } from '../components.jsx'
 import { getHealth } from '../api.js'
+import { clusterKey } from './_picker.jsx'
 
 export default function Compare({ clusters }) {
   const [a, setA] = useState(clusters[0])
@@ -30,20 +31,24 @@ export default function Compare({ clusters }) {
   const Sel = ({ v, set, label }) => (
     <div>
       <div style={{ fontSize: 12, color: '#7fa8bc', marginBottom: 6 }}>{label}</div>
-      <select className="mono" value={v.cluster_name} onChange={e => set(clusters.find(c => c.cluster_name === e.target.value))}
+      <select className="mono" value={clusterKey(v)} onChange={e => set(clusters.find(c => clusterKey(c) === e.target.value))}
         style={{ background: '#003345', color: '#fafafa', border: '1px solid rgba(0,237,100,0.25)', borderRadius: 6, padding: '8px 12px', minWidth: 220 }}>
-        {clusters.map(c => <option key={c.cluster_name} value={c.cluster_name}>{c.cluster_name}</option>)}
+        {clusters.map(c => <option key={clusterKey(c)} value={clusterKey(c)}>{c.project_name} / {c.cluster_name}</option>)}
       </select>
     </div>
   )
 
+  const sameCluster = clusterKey(a) === clusterKey(b)
+
   // metric, valueA, valueB, betterWhen ('high'|'low'|null)
+  // Context rows (cost, tier, region) stay out of the win count — a cheaper
+  // tier isn't "better", it's just smaller.
   const metrics = data ? [
-    ['Health Score', data.a.score, data.b.score, 'high', v => `${v}/100`],
+    ['Health Score', data.a.score, data.b.score, 'high', v => v == null ? '—' : `${v}/100`],
     ['Grade', data.a.grade, data.b.grade, null, v => v],
     ['PA Sugestões', data.a.n_pa, data.b.n_pa, 'low', v => v],
     ['Slow Queries', data.a.n_sq, data.b.n_sq, 'low', v => v],
-    ['Custo USD/Mês', data.a.cost_usd, data.b.cost_usd, 'low', v => `$${v}`],
+    ['Custo USD/Mês (est.)', data.a.cost_usd, data.b.cost_usd, null, v => `$${v}`],
     ['Tier', data.a.tier, data.b.tier, null, v => v],
     ['Região', data.a.region_pretty, data.b.region_pretty, null, v => v],
     ['MongoDB', data.a.mongo_version, data.b.mongo_version, 'high', v => v],
@@ -61,7 +66,7 @@ export default function Compare({ clusters }) {
   }
 
   const winner = (va, vb, better) => {
-    if (better === null || va === vb) return 0
+    if (better === null || va === vb || va == null || vb == null) return 0
     const isVersion = v => /^\d+(\.\d+)+$/.test(String(v))
     let diff
     if (isVersion(va) && isVersion(vb)) {
@@ -86,9 +91,10 @@ export default function Compare({ clusters }) {
       <div className="row" style={{ marginBottom: 18, alignItems: 'flex-end' }}>
         <Sel v={a} set={setA} label="🔵 Cluster A" />
         <Sel v={b} set={setB} label="🟠 Cluster B" />
-        <Button variant="primary" onClick={cmp} disabled={busy}>{busy ? 'Comparando…' : '🔍 Comparar'}</Button>
+        <Button variant="primary" onClick={cmp} disabled={busy || sameCluster}>{busy ? 'Comparando…' : '🔍 Comparar'}</Button>
       </div>
 
+      {sameCluster && <Banner variant="info" style={{ marginBottom: 16 }}>Selecione dois clusters diferentes para comparar.</Banner>}
       {err && <Banner variant="danger" style={{ marginBottom: 16 }}>{err}</Banner>}
 
       {data && (

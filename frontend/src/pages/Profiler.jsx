@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { H1 } from '@leafygreen-ui/typography'
 import Button from '@leafygreen-ui/button'
 import Banner from '@leafygreen-ui/banner'
 import Badge from '@leafygreen-ui/badge'
 import { KpiGrid, Kpi, Section, Empty } from '../components.jsx'
-import { getSlow } from '../api.js'
+import { getSlow, explainQuery } from '../api.js'
 import { ClusterPicker } from './_picker.jsx'
 
 const PLAN = { COLLSCAN: '🔴 COLLSCAN', IXSCAN: '🟢 IXSCAN', FETCH: '🟡 FETCH', SORT: '🟠 SORT', IDHACK: '🟢 IDHACK' }
@@ -25,10 +25,11 @@ export default function Profiler({ clusters, config }) {
   const [err, setErr] = useState(null)
   const [sort, setSort] = useState('dur')       // dur | count
   const [filter, setFilter] = useState('all')   // all | read | write | collscan
-  const [open, setOpen] = useState(null)        // index of the expanded row
+  const [open, setOpen] = useState(null)        // key of the expanded row (stable across sort/filter)
+  const [expl, setExpl] = useState(null)        // { key, busy, data, err } — real explain result
 
   const load = async () => {
-    setBusy(true); setErr(null); setRows(null); setOpen(null)
+    setBusy(true); setErr(null); setRows(null); setOpen(null); setExpl(null)
     try {
       const data = await getSlow(sel.project_id, sel.cluster_name)
       // Group by shape (namespace + plan + operation) to count executions
@@ -60,6 +61,15 @@ export default function Profiler({ clusters, config }) {
       setRows(Object.values(map).map(r => ({ ...r, avgDur: Math.round(r.totalDur / r.count) })))
     } catch (e) { setErr(e?.response?.data?.detail || e.message) }
     finally { setBusy(false) }
+  }
+
+  const runExplain = async (key, r) => {
+    setExpl({ key, busy: true })
+    try {
+      setExpl({ key, busy: false, data: await explainQuery(r.ns, r.filter, sel.project_id, sel.cluster_name) })
+    } catch (e) {
+      setExpl({ key, busy: false, err: e?.response?.data?.detail || e.message })
+    }
   }
 
   const filtered = useMemo(() => {
@@ -112,12 +122,13 @@ export default function Profiler({ clusters, config }) {
           <table className="mdb">
             <thead><tr><th>Namespace</th><th>Tipo</th><th>Plano</th><th>Execuções</th><th>Latência (máx/méd)</th><th>Docs Exam.</th><th></th></tr></thead>
             <tbody>
-              {filtered.map((r, i) => {
+              {filtered.map((r) => {
+                const key = `${r.ns}|${r.planRaw}|${r.op}`
                 const ratio = r.ret > 0 ? Math.round(r.docs / r.ret) : (r.docs > 0 ? r.docs : 0)
                 const ratioBad = ratio >= 100
                 return (
-                  <>
-                    <tr key={i}>
+                  <Fragment key={key}>
+                    <tr>
                       <td className="mono" style={{ color: '#00ED64' }}>
                         <div title={r.ns} style={{ maxWidth: 230, overflow: 'hidden',
                              textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.ns}</div>
@@ -137,10 +148,10 @@ export default function Profiler({ clusters, config }) {
                       <td className="mono">{r.count.toLocaleString('pt-BR')}×</td>
                       <td className="mono">{r.maxDur.toLocaleString('pt-BR')} / {r.avgDur.toLocaleString('pt-BR')}ms</td>
                       <td className="mono" style={{ color: '#7fa8bc' }}>{r.docs.toLocaleString('pt-BR')}</td>
-                      <td><Button size="xsmall" onClick={() => setOpen(open === i ? null : i)}>{open === i ? 'fechar' : '🔬 plano'}</Button></td>
+                      <td><Button size="xsmall" onClick={() => { setOpen(open === key ? null : key); setExpl(null) }}>{open === key ? 'fechar' : '🔬 plano'}</Button></td>
                     </tr>
-                    {open === i && (
-                      <tr key={i + 'e'}><td colSpan={7} style={{ background: '#00141d', padding: 16 }}>
+                    {open === key && (
+                      <tr><td colSpan={7} style={{ background: '#00141d', padding: 16 }}>
                         <div style={{ fontSize: 11, color: '#6b94a8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>Plano de execução capturado (slow query log)</div>
                         <div className="mono" style={{ fontSize: 12, color: '#C3E7DD', display: 'flex', gap: 28, flexWrap: 'wrap', marginBottom: 12 }}>
                           <span>plano: <b style={{ color: r.planRaw.includes('COLLSCAN') ? '#ef4444' : '#00ED64' }}>{r.planRaw}</b></span>
@@ -152,15 +163,35 @@ export default function Profiler({ clusters, config }) {
                         </div>
                         <div style={{ marginBottom: 10 }}>
                           <Badge variant={ratioBad ? 'red' : ratio > 10 ? 'yellow' : 'green'}>
-                            Query Targeting: {ratio.toLocaleString('pt-BR')} docs escaneados por documento retornado
+                            Query Targeting (aprox.): {ratio.toLocaleString('pt-BR')} docs escaneados por documento retornado
                           </Badge>
                           {ratioBad && <span style={{ fontSize: 12, color: '#ef4444', marginLeft: 10 }}>← índice provavelmente faltando</span>}
                         </div>
                         <div style={{ fontSize: 11, color: '#6b94a8', marginBottom: 4 }}>Query / comando:</div>
                         <pre style={{ margin: 0, maxHeight: 200 }}>{JSON.stringify(r.filter, null, 2)}</pre>
+                        {config.mongodb && sel.is_uri_target && r.kind === 'read' && !Array.isArray(r.filter) && (
+                          <div style={{ marginTop: 12 }}>
+                            <Button size="xsmall" disabled={expl?.busy} onClick={() => runExplain(key, r)}>
+                              {expl?.busy ? '⏳ Executando…' : "▶ Rodar explain('executionStats') real"}
+                            </Button>
+                            {expl?.key === key && expl.err && (
+                              <Banner variant="danger" style={{ marginTop: 8 }}>{expl.err}</Banner>
+                            )}
+                            {expl?.key === key && expl.data && (
+                              <div className="mono" style={{ fontSize: 12, color: '#C3E7DD', display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 10 }}>
+                                <span>stage: <b style={{ color: String(expl.data.stage).includes('COLLSCAN') ? '#ef4444' : '#00ED64' }}>{expl.data.stage}</b></span>
+                                <span>docs examinados: <b>{expl.data.docs_examined}</b></span>
+                                <span>keys examinados: <b>{expl.data.keys_examined}</b></span>
+                                <span>retornados: <b>{expl.data.n_returned}</b></span>
+                                <span>tempo: <b>{expl.data.exec_ms}ms</b></span>
+                                <span>índice: <b>{expl.data.index_used}</b></span>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </td></tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>

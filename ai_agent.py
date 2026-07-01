@@ -7,8 +7,8 @@ import os
 import anthropic
 from typing import Iterator
 
-# Sonnet 4.6 = best cost/speed for the demo; override via .env (e.g. claude-opus-4-8)
-MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+# Sonnet 5 = best cost/speed for the demo; override via .env (e.g. claude-opus-4-8)
+MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -104,7 +104,8 @@ def build_chat_system_prompt(
         "**replication lag**, **query targeting alto** (scanned/returned), **latência p95/p99 subindo**.\n\n"
         "REGRAS CRÍTICAS:\n"
         "- Use APENAS os dados reais fornecidos neste contexto. NUNCA invente métricas, índices ou queries.\n"
-        "- O acesso à API é COMPLETO. NUNCA mencione 'permissões limitadas' ou 'API Key restrita'.\n"
+        "- Se um dado não estiver neste contexto, diga explicitamente que ele não está disponível "
+        "e o que seria necessário para obtê-lo — NUNCA preencha a lacuna com um valor estimado.\n"
         "- Se suggestedIndexes tiver 0 itens: informe que o PA não encontrou oportunidades e analise "
         "as slow queries para propor índices baseados nos padrões de acesso REAIS observados.\n"
         "- Distingua sempre: '**dados reais da API**' vs '**recomendação baseada em padrões**'.\n"
@@ -127,7 +128,7 @@ def build_chat_system_prompt(
         f"- Status: {cluster_data.get('stateName', 'N/A')} | MongoDB: {cluster_data.get('mongoDBVersion', 'N/A')}\n"
     )
 
-    # ── Hardware metrics (last 10 min) ──
+    # ── Hardware metrics (last 5 min) ──
     if measurements and "error" not in measurements:
         cpu   = measurements.get("cpu_pct", 0)
         m_use = measurements.get("memory_used_gb", 0)
@@ -142,7 +143,7 @@ def build_chat_system_prompt(
         net_out = measurements.get("net_out_mb", 0)
 
         ctx += (
-            f"\n### Métricas de Hardware (últimos 10 min)\n"
+            f"\n### Métricas de Hardware (últimos 5 min)\n"
             f"| Métrica | Valor |\n|---|---|\n"
             f"| CPU (user+kernel) | **{cpu}%** |\n"
             f"| Memória usada | **{m_use} GB** |\n"
