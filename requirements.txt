@@ -1,10 +1,10 @@
 # Backend — Torre Atlas Control Plane (FastAPI)
-fastapi>=0.110.0
-uvicorn[standard]>=0.27.0
+fastapi>=0.110,<0.130
+uvicorn[standard]>=0.27,<0.35
 
 # Lógica de negócio (reusada pelo backend)
-requests>=2.31.0
-anthropic>=0.30.0
-python-dotenv>=1.0.0
-pymongo>=4.6.0
-fpdf2>=2.7.0
+requests>=2.31,<3
+anthropic>=0.30,<1
+python-dotenv>=1.0,<2
+pymongo>=4.6,<5
+fpdf2>=2.7,<3

@@ -8,17 +8,21 @@ Run with:  uvicorn api:app --reload --port 8000
 """
 
 import json
+import logging
 import os
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
+from uuid import uuid4
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
+import observability
 from atlas_client import (
     AtlasClient, create_index_direct,
     DEDICATED_TIERS, NVME_TIERS, TIER_PRICING_USD,
@@ -29,6 +33,8 @@ from ai_agent import (
 )
 
 load_dotenv()
+observability.setup_logging()
+logger = logging.getLogger("torre")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 USD_BRL = float(os.getenv("USD_BRL", "5.70"))
@@ -99,6 +105,50 @@ app.add_middleware(
 )
 
 
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# The server holds real Atlas API keys and Mongo credentials; every /api/* route
+# can trigger billable/destructive actions (scale, index, explain, delete chat
+# history). CORS only stops browsers — a direct HTTP client bypasses it entirely.
+# If API_AUTH_TOKEN is set, all /api requests must present it; unset preserves
+# today's local-dev behavior.
+_API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN", "")
+
+@app.middleware("http")
+async def _require_api_token(request, call_next):
+    if _API_AUTH_TOKEN and request.url.path.startswith("/api"):
+        if request.headers.get("authorization") != f"Bearer {_API_AUTH_TOKEN}":
+            return Response(status_code=401, content="Unauthorized")
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def _request_observability(request: Request, call_next):
+    """request_id on every response + per-route latency/error counters at /api/metrics."""
+    request_id = request.headers.get("x-request-id") or uuid4().hex[:16]
+    start = time.perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        observability.metrics.observe(request.url.path, 500, (time.perf_counter() - start) * 1000)
+        logger.exception("unhandled error request_id=%s path=%s", request_id, request.url.path)
+        raise
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    observability.metrics.observe(request.url.path, response.status_code, elapsed_ms)
+    response.headers["X-Request-Id"] = request_id
+    return response
+
+
+@app.get("/api/metrics")
+def api_metrics():
+    """In-process counters: requests/errors/latency per route + business counters."""
+    return observability.metrics.snapshot()
+
+
+@app.get("/api/health")
+def api_health():
+    return {"status": "ok"}
+
+
 # ── MongoDB (cached client — connection pool reused across requests) ──────────
 _mongo_clients: dict = {}
 
@@ -137,6 +187,7 @@ def list_clusters():
         try:
             clusters = client.get_clusters(proj["id"])
         except Exception:
+            logger.exception("get_clusters failed project_id=%s", proj["id"])
             continue
         for c in clusters:
             tier = region = "—"
@@ -176,7 +227,7 @@ def alerts(project_ids: str = Query("", description="IDs separados por vírgula"
         try:
             total += len(client.get_open_alerts(pid))
         except Exception:
-            pass
+            logger.exception("get_open_alerts failed project_id=%s", pid)
     return {"open_alerts": total}
 
 
@@ -250,7 +301,7 @@ def health(project_id: str, cluster_name: str, status: str = "", mongo_version: 
             if "COLLSCAN" in str(attr.get("planSummary", "")):
                 collscan_shapes.add((q.get("namespace", ""), str(attr.get("type", ""))))
     except Exception:
-        pass
+        logger.exception("health score data gathering failed project_id=%s cluster=%s", project_id, cluster_name)
 
     try:
         major = int(str(mongo_version).split(".")[0])
@@ -321,6 +372,7 @@ def finops():
         try:
             work += [(proj, c) for c in client.get_clusters(proj["id"])]
         except Exception:
+            logger.exception("get_clusters failed project_id=%s", proj["id"])
             continue
 
     def _tier_down(tier: str) -> Optional[str]:
@@ -409,12 +461,28 @@ def _assert_uri_targets(project_id: Optional[str], cluster_name: Optional[str]):
     try:
         cluster = get_client().get_cluster(project_id, cluster_name)
     except Exception:
+        logger.exception("get_cluster failed project_id=%s cluster=%s", project_id, cluster_name)
         return
     srv_hash = _cluster_srv_hash(cluster)
     if srv_hash and srv_hash != uri_hash:
         raise HTTPException(status_code=409, detail=(
             f"MONGODB_URI aponta para outro cluster — a ação seria executada fora de "
             f"'{cluster_name}'. Ajuste o MONGODB_URI no .env do servidor."))
+
+
+_UNSAFE_FILTER_OPERATORS = {"$where", "$function", "$accumulator", "$expr"}
+
+def _assert_filter_is_safe(value):
+    """Rejects filters using $where/$function/$accumulator/$expr — these run
+    attacker-supplied JavaScript/expressions server-side."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if k in _UNSAFE_FILTER_OPERATORS:
+                raise HTTPException(status_code=400, detail=f"Operador não permitido: {k}")
+            _assert_filter_is_safe(v)
+    elif isinstance(value, list):
+        for item in value:
+            _assert_filter_is_safe(item)
 
 
 @app.post("/api/explain")
@@ -424,6 +492,7 @@ def explain_query(body: ExplainBody):
     if not uri:
         raise HTTPException(status_code=400, detail="MONGODB_URI não configurado no servidor.")
     _assert_uri_targets(body.project_id, body.cluster_name)
+    _assert_filter_is_safe(body.filter)
     try:
         parts = body.namespace.split(".", 1)
         db_name, coll = parts[0], (parts[1] if len(parts) > 1 else parts[0])
@@ -523,6 +592,7 @@ def chat(body: ChatBody):
                 conv_id = new_conversation(uri, body.cluster_name or "")
             add_message(uri, conv_id, "user", user_msg)
         except Exception:
+            logger.exception("chat history write (user turn) failed")
             conv_id = None
 
     def gen():
@@ -540,7 +610,7 @@ def chat(body: ChatBody):
                 from chat_memory import add_message
                 add_message(uri, conv_id, "assistant", "".join(acc))
             except Exception:
-                pass
+                logger.exception("chat history write (assistant turn) failed")
 
     headers = {"X-Conversation-Id": conv_id} if conv_id else {}
     return StreamingResponse(gen(), media_type="text/plain", headers=headers)
@@ -593,7 +663,10 @@ def conversation_messages(conv_id: str):
     from chat_memory import load_messages
     try:
         msgs = load_messages(uri, conv_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
+        logger.exception("load_messages failed conv_id=%s", conv_id)
         raise HTTPException(status_code=503, detail=_MONGO_DOWN)
     return {"messages": [
         {"role": m.get("role"), "content": m.get("content"), "ts": str(m.get("ts", ""))}
@@ -606,11 +679,16 @@ def delete_conversation_ep(conv_id: str):
     from chat_memory import delete_conversation
     try:
         delete_conversation(uri, conv_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception:
+        logger.exception("delete_conversation failed conv_id=%s", conv_id)
         raise HTTPException(status_code=503, detail=_MONGO_DOWN)
     return {"ok": True}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    # Local-only by design — holds real Atlas/Mongo credentials. Override via
+    # API_HOST if you know what you're doing (see API_AUTH_TOKEN in .env.example).
+    uvicorn.run("api:app", host=os.getenv("API_HOST", "127.0.0.1"), port=8000, reload=True)

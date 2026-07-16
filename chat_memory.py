@@ -28,6 +28,16 @@ COLL_NAME = "chat_history"
 
 _clients: dict = {}
 
+
+def _oid(conversation_id: str) -> ObjectId:
+    """Validates conversation_id up front — an invalid id must surface as a
+    caller error (400), not an unhandled bson.errors.InvalidId (500)."""
+    try:
+        return ObjectId(conversation_id)
+    except Exception as e:
+        raise ValueError(f"invalid conversation_id: {conversation_id!r}") from e
+
+
 # ── Connection ────────────────────────────────────────────────────────────────
 def _get_collection(mongo_uri: str) -> Collection:
     if mongo_uri not in _clients:
@@ -91,12 +101,12 @@ def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, e
         title = content[:70] + ("…" if len(content) > 70 else "")
         # Only set the title if it is still "Nova Conversa"
         _get_collection(mongo_uri).update_one(
-            {"_id": ObjectId(conversation_id), "title": "Nova Conversa"},
+            {"_id": _oid(conversation_id), "title": "Nova Conversa"},
             {"$set": {"title": title}},
         )
 
     _get_collection(mongo_uri).update_one(
-        {"_id": ObjectId(conversation_id)},
+        {"_id": _oid(conversation_id)},
         update,
     )
 
@@ -104,7 +114,7 @@ def add_message(mongo_uri: str, conversation_id: str, role: str, content: str, e
 def load_messages(mongo_uri: str, conversation_id: str) -> List[Dict]:
     """Return a conversation's messages. Embedded array = a single read."""
     doc = _get_collection(mongo_uri).find_one(
-        {"_id": ObjectId(conversation_id)},
+        {"_id": _oid(conversation_id)},
         {"messages": 1, "cluster": 1},
     )
     if not doc:
@@ -154,7 +164,7 @@ def search_conversations(mongo_uri: str, query: str, limit: int = 8) -> List[Dic
 
 def delete_conversation(mongo_uri: str, conversation_id: str):
     """Delete a conversation by ID."""
-    _get_collection(mongo_uri).delete_one({"_id": ObjectId(conversation_id)})
+    _get_collection(mongo_uri).delete_one({"_id": _oid(conversation_id)})
 
 
 # ── Utilities ─────────────────────────────────────────────────────────────────

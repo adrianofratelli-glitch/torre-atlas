@@ -1,7 +1,12 @@
 // api.js — axios client for Torre's FastAPI backend
 import axios from 'axios'
 
-const http = axios.create({ baseURL: '/api', timeout: 60000 })
+// Optional: set VITE_API_TOKEN to match the backend's API_AUTH_TOKEN when the
+// server is reachable beyond localhost.
+const API_TOKEN = import.meta.env.VITE_API_TOKEN || ''
+const authHeaders = API_TOKEN ? { Authorization: `Bearer ${API_TOKEN}` } : {}
+
+const http = axios.create({ baseURL: '/api', timeout: 60000, headers: authHeaders })
 
 export const getConfig      = () => http.get('/config').then(r => r.data)
 export const getClusters    = () => http.get('/clusters').then(r => r.data.clusters)
@@ -29,7 +34,7 @@ export const deleteConversation = (id) => http.delete(`/chat/conversations/${id}
 async function* streamPost(url, payload, onResponse) {
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify(payload),
   })
   if (!res.ok || !res.body) {
@@ -57,7 +62,7 @@ export const streamAnalyze = (project_id, cluster_name) =>
 export async function downloadReport(cluster_name, analysis, health_score = null, health_issues = null) {
   const res = await fetch('/api/report', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
     body: JSON.stringify({ cluster_name, analysis, health_score, health_issues }),
   })
   if (!res.ok) throw new Error(`Erro ao gerar relatório (HTTP ${res.status})`)

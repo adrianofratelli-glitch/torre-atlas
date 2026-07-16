@@ -20,6 +20,8 @@
   --mdb-surface: var(--bg-secondary);
   --mdb-card: var(--bg-card);
   --mdb-green: var(--accent);
+  --mdb-green-dark: #00684A;
+  --mdb-red: #FF6960;
   --mdb-text: var(--text-pri);
   --mdb-sub: var(--text-muted);
   --mdb-border: var(--border-subtle);

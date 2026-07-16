@@ -1,6 +1,9 @@
+import logging
 import requests
 from requests.auth import HTTPDigestAuth
 from typing import Optional
+
+logger = logging.getLogger("torre.atlas_client")
 
 ATLAS_BASE = "https://cloud.mongodb.com/api/atlas/v2"
 ATLAS_HEADERS = {
@@ -108,6 +111,7 @@ class AtlasClient:
         try:
             cluster = self.get_cluster(project_id, cluster_name)
         except Exception:
+            logger.exception("get_cluster failed project_id=%s cluster=%s", project_id, cluster_name)
             cluster = {}
 
         # A paused cluster has no active processes
@@ -117,6 +121,7 @@ class AtlasClient:
         try:
             procs = self.get_processes(project_id)
         except Exception:
+            logger.exception("get_processes failed project_id=%s", project_id)
             return None
         if not procs:
             return None
@@ -169,6 +174,7 @@ class AtlasClient:
                 ]},
             )
         except Exception:
+            logger.exception("disk metrics fetch failed project_id=%s process_id=%s", project_id, process_id)
             return {}
 
         def _last(points):
@@ -227,6 +233,7 @@ class AtlasClient:
                 },
             )
         except Exception as e:
+            logger.exception("measurements fetch failed project_id=%s process_id=%s", project_id, process_id)
             return {"error": str(e)}
 
         def _last_nonnull(points):
@@ -300,6 +307,7 @@ class AtlasClient:
                 params={"granularity": granularity, "period": period, "m": METRICS},
             )
         except Exception as e:
+            logger.exception("measurements series fetch failed project_id=%s process_id=%s", project_id, process_id)
             return {"error": str(e)}
 
         raw = {}
@@ -458,6 +466,7 @@ class AtlasClient:
                 f"/groups/{project_id}/alerts", params={"status": "OPEN"}
             ).get("results", [])
         except Exception:
+            logger.exception("get_open_alerts failed project_id=%s", project_id)
             return []
 
     # ── Invoice ───────────────────────────────────────────────────────────
@@ -465,6 +474,7 @@ class AtlasClient:
         try:
             return self._get(f"/orgs/{self.org_id}/invoices/pending")
         except Exception:
+            logger.exception("get_pending_invoice failed org_id=%s", self.org_id)
             return {}
 
     # ── Cost estimation (static, no API call) ─────────────────────────────
