@@ -2,6 +2,7 @@ venv/
 .venv/
 __pycache__/
 .env
+.env.bak
 *.pyc
 .DS_Store
 files.zip
@@ -15,3 +16,6 @@ frontend/dist/
 frontend/.vite/
 node_modules/
 npm-debug.log*
+
+# graphify knowledge-graph output (local tooling artifact, not app code)
+graphify-out/
