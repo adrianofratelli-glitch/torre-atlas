@@ -1,4 +1,5 @@
 import logging
+import time
 import requests
 from requests.auth import HTTPDigestAuth
 from typing import Optional
@@ -40,15 +41,44 @@ TIER_PRICING_USD = {
 }
 
 
+# Shared TTL caches (module-level: AtlasClient is rebuilt per request, so
+# per-instance dicts would never produce a hit)
+_PRIMARY_CACHE:  dict = {}   # (project_id, cluster_name) -> (expires, value)
+_PROJECTS_CACHE: dict = {}   # cache key -> (expires, value)
+_CLUSTERS_CACHE: dict = {}   # project_id -> (expires, value)
+
+
 class AtlasClient:
     def __init__(self, public_key: str, private_key: str, org_id: str, project_id: str = ""):
         self.auth       = HTTPDigestAuth(public_key, private_key)
         self.org_id     = org_id
         self.project_id = project_id
+        # Reused HTTP session: keeps the TCP/TLS connection (and digest-auth
+        # handshake state) alive across calls — halves Atlas API latency.
+        self.session    = requests.Session()
+        # TTL caches (simple dict + time.monotonic — avoids re-hitting Atlas
+        # for data that barely changes between dashboard requests)
+        self._primary_cache  = _PRIMARY_CACHE
+        self._projects_cache = _PROJECTS_CACHE
+        self._clusters_cache = _CLUSTERS_CACHE
+
+    _PRIMARY_TTL  = 60.0
+    _LISTING_TTL  = 30.0
+
+    @staticmethod
+    def _cache_get(cache: dict, key):
+        hit = cache.get(key)
+        if hit and hit[0] > time.monotonic():
+            return hit[1]
+        return None
+
+    @staticmethod
+    def _cache_put(cache: dict, key, value, ttl: float):
+        cache[key] = (time.monotonic() + ttl, value)
 
     # ── HTTP helpers ──────────────────────────────────────────────────────
     def _get(self, path, params=None):
-        r = requests.get(
+        r = self.session.get(
             f"{ATLAS_BASE}{path}", auth=self.auth,
             headers=ATLAS_HEADERS, params=params or {}, timeout=30
         )
@@ -56,7 +86,7 @@ class AtlasClient:
         return r.json()
 
     def _patch(self, path, body):
-        r = requests.patch(
+        r = self.session.patch(
             f"{ATLAS_BASE}{path}", auth=self.auth,
             headers=ATLAS_HEADERS, json=body, timeout=30
         )
@@ -68,13 +98,25 @@ class AtlasClient:
         return self._get(f"/orgs/{self.org_id}")
 
     def get_projects(self):
+        key = self.project_id or "_org"
+        cached = self._cache_get(self._projects_cache, key)
+        if cached is not None:
+            return cached
         if self.project_id:
-            return [self._get(f"/groups/{self.project_id}")]
-        return self._get("/groups", params={"itemsPerPage": 500}).get("results", [])
+            result = [self._get(f"/groups/{self.project_id}")]
+        else:
+            result = self._get("/groups", params={"itemsPerPage": 500}).get("results", [])
+        self._cache_put(self._projects_cache, key, result, self._LISTING_TTL)
+        return result
 
     # ── Clusters ──────────────────────────────────────────────────────────
     def get_clusters(self, project_id):
-        return self._get(f"/groups/{project_id}/clusters").get("results", [])
+        cached = self._cache_get(self._clusters_cache, project_id)
+        if cached is not None:
+            return cached
+        result = self._get(f"/groups/{project_id}/clusters").get("results", [])
+        self._cache_put(self._clusters_cache, project_id, result, self._LISTING_TTL)
+        return result
 
     def get_cluster(self, project_id, cluster_name):
         return self._get(f"/groups/{project_id}/clusters/{cluster_name}")
@@ -106,7 +148,19 @@ class AtlasClient:
         1. Fetch the cluster to check whether it is PAUSED (no processes)
         2. Extract the cluster's unique hash from connectionStrings
         3. Use that hash to find the exact primary in the process list
+
+        Cached for 60s per (project_id, cluster_name) — primaries change on
+        election only, and every dashboard endpoint re-resolves it otherwise.
         """
+        cache_key = (project_id, cluster_name)
+        hit = self._primary_cache.get(cache_key)
+        if hit and hit[0] > time.monotonic():   # value may legitimately be None
+            return hit[1]
+        result = self._get_primary_uncached(project_id, cluster_name)
+        self._cache_put(self._primary_cache, cache_key, result, self._PRIMARY_TTL)
+        return result
+
+    def _get_primary_uncached(self, project_id: str, cluster_name: str) -> Optional[str]:
         import re as _re
         try:
             cluster = self.get_cluster(project_id, cluster_name)
@@ -508,24 +562,24 @@ def create_index_direct(mongo_uri: str, namespace: str, index_keys: list) -> str
         keys = [(list(k.keys())[0], _direction(list(k.values())[0])) for k in index_keys]
         mc        = MongoClient(mongo_uri, serverSelectionTimeoutMS=6000)
 
-        for attempt in range(2):
-            try:
-                name = mc[db_name][coll_name].create_index(keys)
-                mc.close()
-                return f"✅ Índice criado: `{name}`"
-            except OperationFailure as e:
-                if e.code == 11602 and attempt == 0:
-                    # Primary election in progress — wait and retry once
-                    import time; time.sleep(3)
-                    continue
-                mc.close()
-                return (
-                    f"❌ Erro MongoDB ({e.code}): {e.details.get('errmsg', str(e))}\n\n"
-                    f"**Dica:** O cluster pode estar em processo de eleição de primário. "
-                    f"Aguarde ~30s e tente novamente."
-                )
-        mc.close()
-        return "❌ Falha após retry. Tente novamente em alguns instantes."
+        try:
+            for attempt in range(2):
+                try:
+                    name = mc[db_name][coll_name].create_index(keys)
+                    return f"✅ Índice criado: `{name}`"
+                except OperationFailure as e:
+                    if e.code == 11602 and attempt == 0:
+                        # Primary election in progress — wait and retry once
+                        import time; time.sleep(3)
+                        continue
+                    return (
+                        f"❌ Erro MongoDB ({e.code}): {e.details.get('errmsg', str(e))}\n\n"
+                        f"**Dica:** O cluster pode estar em processo de eleição de primário. "
+                        f"Aguarde ~30s e tente novamente."
+                    )
+            return "❌ Falha após retry. Tente novamente em alguns instantes."
+        finally:
+            mc.close()
     except ImportError:
         return "❌ pymongo não instalado. Execute: pip install pymongo"
     except Exception as e:

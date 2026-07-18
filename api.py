@@ -431,6 +431,8 @@ class ScaleBody(BaseModel):
 
 @app.post("/api/cluster/{project_id}/{cluster_name}/scale")
 def scale(project_id: str, cluster_name: str, body: ScaleBody):
+    if body.new_tier not in DEDICATED_TIERS + NVME_TIERS:
+        raise HTTPException(status_code=400, detail=f"Tier inválido: {body.new_tier}")
     client = get_client()
     try:
         result = client.scale_cluster(project_id, cluster_name, body.new_tier)
@@ -439,17 +441,19 @@ def scale(project_id: str, cluster_name: str, body: ScaleBody):
         raise HTTPException(status_code=502, detail=str(e))
 
 
+# project_id/cluster_name are REQUIRED: optional fields would let a caller
+# bypass _assert_uri_targets simply by omitting them.
 class IndexBody(BaseModel):
     namespace: str
     index_keys: list
-    project_id: Optional[str] = None
-    cluster_name: Optional[str] = None
+    project_id: str
+    cluster_name: str
 
 class ExplainBody(BaseModel):
     namespace: str
     filter: dict = {}
-    project_id: Optional[str] = None
-    cluster_name: Optional[str] = None
+    project_id: str
+    cluster_name: str
 
 
 def _assert_uri_targets(project_id: Optional[str], cluster_name: Optional[str]):
@@ -540,10 +544,12 @@ def analyze(body: AnalyzeBody):
     pid = client.get_primary(body.project_id, body.cluster_name)
     pa = client.get_suggested_indexes(body.project_id, pid) if pid else {}
     sq = client.get_slow_queries(body.project_id, pid) if pid else {}
+    meas = client.get_measurements(body.project_id, pid) if pid else {}
+    cpu24 = _cpu_24h_stats(client, body.project_id, pid) if pid else None
 
     def gen():
         try:
-            for chunk in analyze_cluster_stream(full_c, pa, sq):
+            for chunk in analyze_cluster_stream(full_c, pa, sq, meas, cpu24):
                 yield chunk
         except Exception as e:
             yield friendly_api_error(e)
@@ -567,17 +573,35 @@ def _ensure_chat_db(uri: str):
         _chat_db_ready = True
 
 
+# Atlas snapshot cache for /api/chat: 4 Atlas calls per chat turn is pure
+# latency, and a stable snapshot lets the dynamic system block hit Anthropic's
+# prompt cache across turns. Keyed per cluster, short TTL keeps data fresh.
+_CHAT_SNAPSHOT_TTL = 150.0   # seconds (~2.5 min)
+_chat_snapshots: dict = {}   # (project_id, cluster_name) -> (expires, (full_c, pa, sq, meas))
+
+
+def _chat_cluster_snapshot(client: AtlasClient, project_id: str, cluster_name: str) -> tuple:
+    key = (project_id, cluster_name)
+    hit = _chat_snapshots.get(key)
+    if hit and hit[0] > time.monotonic():
+        return hit[1]
+    pid = client.get_primary(project_id, cluster_name)
+    full_c = client.get_cluster(project_id, cluster_name)
+    pa = client.get_suggested_indexes(project_id, pid) if pid else {}
+    sq = client.get_slow_queries(project_id, pid) if pid else {}
+    meas = client.get_measurements(project_id, pid) if pid else {}
+    snapshot = (full_c, pa, sq, meas)
+    _chat_snapshots[key] = (time.monotonic() + _CHAT_SNAPSHOT_TTL, snapshot)
+    return snapshot
+
+
 @app.post("/api/chat")
 def chat(body: ChatBody):
     # There is ALWAYS a system prompt (MongoDB Atlas anchor) — without it the model answers generically.
     system = build_chat_system_prompt()
     if body.project_id and body.cluster_name:
         client = get_client()
-        pid = client.get_primary(body.project_id, body.cluster_name)
-        full_c = client.get_cluster(body.project_id, body.cluster_name)
-        pa = client.get_suggested_indexes(body.project_id, pid) if pid else {}
-        sq = client.get_slow_queries(body.project_id, pid) if pid else {}
-        meas = client.get_measurements(body.project_id, pid) if pid else {}
+        full_c, pa, sq, meas = _chat_cluster_snapshot(client, body.project_id, body.cluster_name)
         system = build_chat_system_prompt(full_c, pa, sq, meas)
 
     # Atlas persistence (best-effort — chat works even without MONGODB_URI)

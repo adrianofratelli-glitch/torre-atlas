@@ -7,15 +7,28 @@ import os
 import anthropic
 from typing import Iterator
 
+import observability
+
 # Sonnet 5 = best cost/speed for the demo; override via .env (e.g. claude-opus-4-8)
 MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
+
+
+def _track_usage(usage) -> None:
+    """Surfaces Claude token spend (incl. cache hits) at /api/metrics."""
+    if usage is None:
+        return
+    observability.metrics.bump("anthropic_input_tokens", usage.input_tokens)
+    observability.metrics.bump("anthropic_output_tokens", usage.output_tokens)
+    observability.metrics.bump("anthropic_cache_read_tokens", getattr(usage, "cache_read_input_tokens", 0) or 0)
+    observability.metrics.bump("anthropic_cache_write_tokens", getattr(usage, "cache_creation_input_tokens", 0) or 0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ONE-SHOT ANALYSIS (original, kept)
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _build_analysis_prompt(cluster: dict, pa_data: dict, slow_queries: dict) -> str:
+def _build_analysis_prompt(cluster: dict, pa_data: dict, slow_queries: dict,
+                           measurements: dict = None, cpu24: dict = None) -> str:
     tier = region = "N/A"
     try:
         rc     = cluster["replicationSpecs"][0]["regionConfigs"][0]
@@ -27,6 +40,23 @@ def _build_analysis_prompt(cluster: dict, pa_data: dict, slow_queries: dict) -> 
     suggestions = pa_data.get("suggestedIndexes", [])
     slow_qs     = slow_queries.get("slowQueries", [])
 
+    hw = ""
+    if measurements and "error" not in measurements:
+        hw = (
+            "\n## Métricas de Hardware (últimos 5 min)\n"
+            f"- CPU: **{measurements.get('cpu_pct', 0)}%** | "
+            f"Memória: **{measurements.get('mem_pct', 0)}%** "
+            f"({measurements.get('memory_used_gb', 0)}/{measurements.get('mem_total_gb', 0)} GB)\n"
+            f"- Conexões: **{measurements.get('connections', 0)}** | "
+            f"Disk IOPS R/W: **{measurements.get('disk_iops_read', 0)}/{measurements.get('disk_iops_write', 0)}** | "
+            f"Storage: **{measurements.get('disk_pct', 0)}%**\n"
+            f"- Ops/s — query: {measurements.get('ops_query', 0)}, insert: {measurements.get('ops_insert', 0)}, "
+            f"update: {measurements.get('ops_update', 0)} | "
+            f"Query targeting (scanned/returned): **{measurements.get('query_targeting', 0)}**\n"
+        )
+    if cpu24:
+        hw += f"- CPU 24h — média: **{cpu24.get('avg')}%** | p95: **{cpu24.get('p95')}%**\n"
+
     return f"""Você é um DBA especialista em MongoDB com foco em performance para aplicações financeiras de alto volume no Brasil.
 
 ## Cluster analisado
@@ -35,7 +65,7 @@ def _build_analysis_prompt(cluster: dict, pa_data: dict, slow_queries: dict) -> 
 - **Região:** {region}
 - **Status:** {cluster.get('stateName', 'N/A')}
 - **Versão:** {cluster.get('mongoDBVersion', 'N/A')}
-
+{hw}
 ## Performance Advisor — {len(suggestions)} índice(s) sugerido(s)
 ```json
 {json.dumps(suggestions[:5], indent=2)[:4000]}
@@ -64,21 +94,53 @@ O tier **{tier}** é adequado? Se não, qual tier recomendar e por quê (critér
 Máximo 600 palavras. Foque em impacto de negócio."""
 
 
-def analyze_cluster_stream(cluster: dict, pa_data: dict, slow_queries: dict) -> Iterator[str]:
+def analyze_cluster_stream(cluster: dict, pa_data: dict, slow_queries: dict,
+                           measurements: dict = None, cpu24: dict = None) -> Iterator[str]:
     """Streams a one-shot performance analysis."""
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")})
     with client.messages.stream(
         model=MODEL,
         max_tokens=1500,
-        messages=[{"role": "user", "content": _build_analysis_prompt(cluster, pa_data, slow_queries)}],
+        messages=[{"role": "user", "content": _build_analysis_prompt(cluster, pa_data, slow_queries, measurements, cpu24)}],
     ) as stream:
         for text in stream.text_stream:
             yield text
+        _track_usage(getattr(stream.get_final_message(), "usage", None))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # CONVERSATIONAL CHAT
 # ══════════════════════════════════════════════════════════════════════════════
+
+# Static across every call in every session — the biggest win from prompt
+# caching is marking exactly this block as `cache_control: ephemeral` so repeat
+# chat turns (same session) and repeat sessions within the 5-min TTL don't
+# re-bill the ~350-token instruction block as fresh input tokens every time.
+_BASE_SYSTEM_PROMPT = (
+    "Você é um especialista em **MongoDB Atlas** (banco de dados NoSQL) e Solutions "
+    "Architect, focado em aplicações financeiras de alto volume no Brasil.\n"
+    "Responda de forma técnica e objetiva. Use markdown para formatar.\n"
+    "Quando relevante, forneça comandos do **MongoDB shell (mongosh)** prontos para execução.\n"
+    "Foque em impacto de negócio ao explicar problemas técnicos.\n\n"
+    "ESCOPO — LEIA COM ATENÇÃO:\n"
+    "- O domínio é EXCLUSIVAMENTE MongoDB Atlas: clusters são **tiers do Atlas** "
+    "(M10, M20, M30, M40, M80…), NÃO clusters de Kubernetes.\n"
+    "- 'Scale up' significa subir o **tier do cluster Atlas** (ex: M20 → M40) ou fazer sharding — "
+    "NUNCA é sobre adicionar nodes em Kubernetes/EKS/GKE.\n"
+    "- NUNCA mencione Kubernetes, kubectl, pods, OOMKilled, EKS, GKE, AKS, Prometheus, "
+    "Grafana ou autoscaler de nodes. Se a pergunta parecer ambígua, assuma SEMPRE MongoDB Atlas.\n"
+    "- Indicadores de scale up no Atlas: **CPU normalizada alta** (>75%), **conexões próximas "
+    "do limite do tier**, **IOPS de disco saturando**, **WiredTiger cache pressure / page faults**, "
+    "**replication lag**, **query targeting alto** (scanned/returned), **latência p95/p99 subindo**.\n\n"
+    "REGRAS CRÍTICAS:\n"
+    "- Use APENAS os dados reais fornecidos neste contexto. NUNCA invente métricas, índices ou queries.\n"
+    "- Se um dado não estiver neste contexto, diga explicitamente que ele não está disponível "
+    "e o que seria necessário para obtê-lo — NUNCA preencha a lacuna com um valor estimado.\n"
+    "- Se suggestedIndexes tiver 0 itens: informe que o PA não encontrou oportunidades e analise "
+    "as slow queries para propor índices baseados nos padrões de acesso REAIS observados.\n"
+    "- Distingua sempre: '**dados reais da API**' vs '**recomendação baseada em padrões**'.\n"
+)
+
 
 def build_chat_system_prompt(
     cluster_data: dict = None,
@@ -86,30 +148,7 @@ def build_chat_system_prompt(
     slow_queries: dict = None,
     measurements: dict = None,
 ) -> str:
-    base = (
-        "Você é um especialista em **MongoDB Atlas** (banco de dados NoSQL) e Solutions "
-        "Architect, focado em aplicações financeiras de alto volume no Brasil.\n"
-        "Responda de forma técnica e objetiva. Use markdown para formatar.\n"
-        "Quando relevante, forneça comandos do **MongoDB shell (mongosh)** prontos para execução.\n"
-        "Foque em impacto de negócio ao explicar problemas técnicos.\n\n"
-        "ESCOPO — LEIA COM ATENÇÃO:\n"
-        "- O domínio é EXCLUSIVAMENTE MongoDB Atlas: clusters são **tiers do Atlas** "
-        "(M10, M20, M30, M40, M80…), NÃO clusters de Kubernetes.\n"
-        "- 'Scale up' significa subir o **tier do cluster Atlas** (ex: M20 → M40) ou fazer sharding — "
-        "NUNCA é sobre adicionar nodes em Kubernetes/EKS/GKE.\n"
-        "- NUNCA mencione Kubernetes, kubectl, pods, OOMKilled, EKS, GKE, AKS, Prometheus, "
-        "Grafana ou autoscaler de nodes. Se a pergunta parecer ambígua, assuma SEMPRE MongoDB Atlas.\n"
-        "- Indicadores de scale up no Atlas: **CPU normalizada alta** (>75%), **conexões próximas "
-        "do limite do tier**, **IOPS de disco saturando**, **WiredTiger cache pressure / page faults**, "
-        "**replication lag**, **query targeting alto** (scanned/returned), **latência p95/p99 subindo**.\n\n"
-        "REGRAS CRÍTICAS:\n"
-        "- Use APENAS os dados reais fornecidos neste contexto. NUNCA invente métricas, índices ou queries.\n"
-        "- Se um dado não estiver neste contexto, diga explicitamente que ele não está disponível "
-        "e o que seria necessário para obtê-lo — NUNCA preencha a lacuna com um valor estimado.\n"
-        "- Se suggestedIndexes tiver 0 itens: informe que o PA não encontrou oportunidades e analise "
-        "as slow queries para propor índices baseados nos padrões de acesso REAIS observados.\n"
-        "- Distingua sempre: '**dados reais da API**' vs '**recomendação baseada em padrões**'.\n"
-    )
+    base = _BASE_SYSTEM_PROMPT
 
     if not cluster_data:
         return base
@@ -175,15 +214,39 @@ def build_chat_system_prompt(
     return base + ctx
 
 
+# Chat history grows unbounded on the client — cap what we actually send so a
+# long-running session doesn't quietly bill more input tokens every turn.
+MAX_HISTORY_MESSAGES = 16
+
+
 def stream_chat(messages: list, system_prompt: str = "") -> Iterator[str]:
-    """Streams a conversational Claude response with full history."""
-    client = anthropic.Anthropic()
+    """Streams a conversational Claude response, windowed history + cached system prompt."""
+    client = anthropic.Anthropic(default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")})
+    if len(messages) > MAX_HISTORY_MESSAGES:
+        messages = messages[-MAX_HISTORY_MESSAGES:]
+        # The window must start on a user turn — a leading assistant message
+        # after slicing is rejected/mishandled by the API.
+        while messages and messages[0].get("role") != "user":
+            messages = messages[1:]
     kwargs = dict(model=MODEL, max_tokens=2000, messages=messages)
     if system_prompt:
-        kwargs["system"] = system_prompt
+        # Split the static instruction block (cacheable across turns/sessions)
+        # from the per-cluster dynamic context that follows it.
+        if system_prompt.startswith(_BASE_SYSTEM_PROMPT):
+            dynamic = system_prompt[len(_BASE_SYSTEM_PROMPT):]
+            blocks = [{"type": "text", "text": _BASE_SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}]
+            if dynamic:
+                # The cluster context is now stable for ~2-3 min (api.py caches
+                # the Atlas snapshot), so caching it pays off across chat turns.
+                blocks.append({"type": "text", "text": dynamic,
+                               "cache_control": {"type": "ephemeral"}})
+            kwargs["system"] = blocks
+        else:
+            kwargs["system"] = system_prompt
     with client.messages.stream(**kwargs) as stream:
         for text in stream.text_stream:
             yield text
+        _track_usage(getattr(stream.get_final_message(), "usage", None))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -225,9 +288,23 @@ def generate_pdf_report(
     except ImportError:
         return _markdown_report(cluster_name, analysis_text, health_score, health_issues), "text/markdown", "md"
 
-    # Sanitize to Latin-1 (fpdf2 core fonts don't support all emojis/unicode)
+    # Sanitize for fpdf2 core fonts: strip emoji/astral codepoints entirely
+    # (instead of littering the PDF with "?"), then Latin-1 for the rest.
+    import re as _re
+    _EMOJI_RE = _re.compile(
+        "["
+        "\U00010000-\U0010FFFF"   # astral plane (most emojis)
+        "←-⇿"           # arrows (⬆️/⬇️ base chars live nearby)
+        "⌀-➿"           # misc technical / symbols / dingbats (✅⏳❌…)
+        "⬀-⯿"           # misc symbols and arrows (⬆⬇)
+        "︎️"            # variation selectors
+        "‍"                  # zero-width joiner
+        "]+"
+    )
+
     def _safe(s: str) -> str:
-        return (s or "").encode("latin-1", "replace").decode("latin-1")
+        cleaned = _EMOJI_RE.sub("", s or "")
+        return cleaned.encode("latin-1", "replace").decode("latin-1")
 
     try:
         pdf = FPDF()
