@@ -97,7 +97,11 @@ Máximo 600 palavras. Foque em impacto de negócio."""
 def analyze_cluster_stream(cluster: dict, pa_data: dict, slow_queries: dict,
                            measurements: dict = None, cpu24: dict = None) -> Iterator[str]:
     """Streams a one-shot performance analysis."""
-    client = anthropic.Anthropic(default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")})
+    client = anthropic.Anthropic(
+        api_key="dummy",
+        base_url=os.getenv("ANTHROPIC_BASE_URL"),
+        default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")},
+    )
     with client.messages.stream(
         model=MODEL,
         max_tokens=1500,
@@ -221,7 +225,11 @@ MAX_HISTORY_MESSAGES = 16
 
 def stream_chat(messages: list, system_prompt: str = "") -> Iterator[str]:
     """Streams a conversational Claude response, windowed history + cached system prompt."""
-    client = anthropic.Anthropic(default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")})
+    client = anthropic.Anthropic(
+        api_key="dummy",
+        base_url=os.getenv("ANTHROPIC_BASE_URL"),
+        default_headers={"api-key": os.getenv("ANTHROPIC_API_KEY", "")},
+    )
     if len(messages) > MAX_HISTORY_MESSAGES:
         messages = messages[-MAX_HISTORY_MESSAGES:]
         # The window must start on a user turn — a leading assistant message
